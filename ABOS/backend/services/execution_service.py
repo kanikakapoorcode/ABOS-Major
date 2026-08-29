@@ -19,6 +19,7 @@ class ExecutionService:
         workflow_step_id: str,
         agent_name: str,
         department: str,
+        task_type: Optional[str] = None,
         input_data: Optional[dict] = None,
         scheduler_score: Optional[float] = None,
     ) -> Execution:
@@ -26,6 +27,7 @@ class ExecutionService:
             workflow_step_id=workflow_step_id,
             agent_name=agent_name,
             department=department,
+            task_type=task_type,
             status=ExecutionStatus.QUEUED.value,
             input_data=input_data,
             scheduler_score=scheduler_score,

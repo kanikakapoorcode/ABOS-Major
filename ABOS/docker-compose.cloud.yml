@@ -1,0 +1,74 @@
+# ── ABOS Cloud Deployment Overrides ──────────────────────────────────────────
+# Used on top of docker-compose.yml for cloud/demo deployment.
+#
+# Usage:
+#   docker-compose -f docker-compose.yml -f docker-compose.cloud.yml up -d
+#
+# What this does differently from local:
+#   - Removes postgres/redis services (use managed cloud services instead)
+#   - Backend runs with 4 workers (no --reload)
+#   - Frontend uses nginx (production build, not Vite dev server)
+#   - All secrets come from environment variables on the host (not .env file)
+#   - No volume mounts for source code (images are immutable in cloud)
+
+version: "3.9"
+
+services:
+
+  # ── Postgres: removed — use managed DB (Neon, Railway, Render) ────────────
+  postgres:
+    deploy:
+      replicas: 0
+
+  # ── Redis: removed — use managed Redis (Railway, Upstash) ────────────────
+  redis:
+    deploy:
+      replicas: 0
+
+  # ── Backend: production mode ──────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    restart: always
+    env_file: []           # no .env file in cloud — use platform env vars
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      # DATABASE_URL, REDIS_URL, JWT_SECRET_KEY, GEMINI_API_KEY etc.
+      # are injected by the hosting platform
+    volumes: []            # no source mounts — use baked image
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 4
+    ports:
+      - "8000:8000"
+
+  # ── Celery: production mode ───────────────────────────────────────────────
+  celery_worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    restart: always
+    env_file: []
+    volumes: []
+    command: celery -A backend.workers.celery_app worker --loglevel=warning --concurrency=4
+
+  # ── Frontend: nginx production build ─────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+  # ── MLflow: persistent cloud storage ─────────────────────────────────────
+  mlflow:
+    restart: always
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri /mlflow/mlruns
+      --default-artifact-root /mlflow/artifacts

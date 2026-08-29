@@ -50,32 +50,36 @@ class AgentScoreResult:
     confidence_score: float
 
 
-def latency_score(avg_latency_ms: float) -> float:
+def latency_score(avg_latency_ms: float, total_executions: int = 1) -> float:
     """
     Map average latency to a 0–1 score where lower latency = higher score.
     Uses a sigmoid-like inverse: score = 1 / (1 + latency / reference)
 
+    If total_executions == 0 (cold start) or avg_latency_ms <= 0 (missing/invalid data),
+    returns 0.5 (neutral fallback). Never treats missing data as perfect latency (1.0).
+
     Examples:
-      0 ms    → 1.0  (perfect, no data yet treated as fast)
-      3000 ms → 0.5  (reference point)
-      9000 ms → 0.25
+      0 ms or cold-start → 0.5  (neutral prior / missing data)
+      3000 ms           → 0.5  (reference point)
+      9000 ms           → 0.25
     """
-    if avg_latency_ms <= 0:
-        return 1.0  # no execution history — assume fast
+    if total_executions <= 0 or avg_latency_ms <= 0:
+        return 0.5  # neutral fallback for unexecuted or missing latency
     return 1.0 / (1.0 + avg_latency_ms / LATENCY_REFERENCE_MS)
 
 
-def cold_start_score() -> AgentScoreResult:
+def cold_start_score(agent_name: str = "unknown", department: str = "unknown") -> AgentScoreResult:
     """
-    Score for an agent with no execution history.
-    Returns a neutral score to encourage exploration.
+    Cold-start prior for an agent with no execution history.
+    Returns neutral priors (composite_score = 0.41) representing 'no evidence yet'.
+    0.50 * 0.5 (success_rate) + 0.20 * 0.5 (latency_score) + 0.30 * 0.2 (confidence) = 0.41
     """
     return AgentScoreResult(
-        agent_name="unknown",
-        department="unknown",
-        composite_score=0.6,
-        success_rate=1.0,
-        latency_score=1.0,
+        agent_name=agent_name,
+        department=department,
+        composite_score=0.41,
+        success_rate=0.5,
+        latency_score=0.5,
         confidence_score=0.2,
     )
 
@@ -88,7 +92,10 @@ def compute_score(agent: AgentScoreInput) -> AgentScoreResult:
           + w_l * latency_score(avg_latency_ms)
           + w_c * confidence_score
     """
-    ls = latency_score(agent.avg_latency_ms)
+    if agent.total_executions == 0:
+        return cold_start_score(agent_name=agent.agent_name, department=agent.department)
+
+    ls = latency_score(agent.avg_latency_ms, total_executions=agent.total_executions)
 
     composite = (
         WEIGHT_SUCCESS_RATE * agent.success_rate
@@ -113,6 +120,10 @@ def select_best_agent(candidates: list[AgentScoreInput]) -> Optional[AgentScoreR
     Given a list of candidate agents for a department, return the one with
     the highest composite score.
     Returns None if the list is empty.
+
+    Cold-Start Tie-Breaking Policy:
+    When candidate scores are tied (e.g. all unexecuted at cold-start prior 0.41),
+    max() deterministically selects the first candidate in the list (configured primary agent).
     """
     if not candidates:
         return None

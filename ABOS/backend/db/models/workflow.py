@@ -42,6 +42,7 @@ class WorkflowStep(UUIDMixin, TimestampMixin, Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     assigned_department: Mapped[str] = mapped_column(String(50), nullable=False)
     assigned_agent: Mapped[str] = mapped_column(String(100), nullable=False)
+    task_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
     input_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     output_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")

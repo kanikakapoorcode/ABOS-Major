@@ -1,0 +1,53 @@
+# ── ABOS Backend Dockerfile ──────────────────────────────────────────────────
+# Multi-stage build: builder installs deps, runtime is lean.
+
+# ── Stage 1: builder ─────────────────────────────────────────────────────────
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+
+# System deps needed to compile some Python packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN curl -sSL https://install.python-poetry.org | python3 - \
+    && ln -s /root/.local/bin/poetry /usr/local/bin/poetry
+
+# Copy dependency files first (layer cache — only reinstalls when these change)
+COPY pyproject.toml poetry.lock* ./
+
+# Install production dependencies only, no virtualenv (we're in a container)
+RUN poetry config virtualenvs.create false \
+    && poetry install --only main --no-interaction --no-ansi
+
+# ── Stage 2: runtime ──────────────────────────────────────────────────────────
+FROM python:3.12-slim AS runtime
+
+WORKDIR /app
+
+# Runtime system deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy installed packages from builder
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy application source
+COPY backend/ ./backend/
+COPY alembic.ini ./
+
+# Non-root user for security
+RUN useradd -m -u 1000 abos && chown -R abos:abos /app
+USER abos
+
+EXPOSE 8000
+
+# Default: run the FastAPI app
+# Override CMD in docker-compose for Celery workers
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

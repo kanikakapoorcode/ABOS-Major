@@ -17,6 +17,7 @@ class WorkflowStepState(TypedDict):
     description: str
     assigned_department: str        # "sales" | "support" | "research"
     assigned_agent: str             # specific agent identifier
+    task_type: Optional[str]        # canonical task type (e.g. "lead_search", "ticket_triage")
     input_data: Dict[str, Any]
     output_data: Optional[Dict[str, Any]]
     status: str                     # pending | running | completed | failed | retrying

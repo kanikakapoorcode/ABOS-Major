@@ -190,15 +190,61 @@ signal = 0.5  if feedback == "partial"
 - success_rate = successful executions in window / window size
 - avg_latency_ms = mean latency of window
 
-### Cold Start Values (agent has no history)
+### Evidence Hierarchy & Task-Conditioned Performance
 
-```
-success_rate    = 1.0
-avg_latency_ms  = 0.0   → latency_score = 1.0
-confidence_score = 1.0
+To maximize routing precision without fragmenting empirical data, the scheduler evaluates historical evidence according to a strict **3-tier sufficiency-aware hierarchy**:
+
+```text
+               Routing Request (department, task_type)
+                                │
+                                ▼
+                     task_type in canonical set?
+                       ↙                   ↘
+                     YES                    NO (or None)
+                      ↓                          ↓
+        AgentTaskProfile in DB?                  │
+              ↙        ↘                         │
+            YES         NO                       │
+             ↓           │                       │
+      total_executions   │                       │
+       >= MIN_TASK (3)   │                       │
+         ↙        ↘      │                       │
+       YES         NO    │                       │
+        ↓           └────┼───────────────────────┘
+  [Tier 1: Task Profile]  ▼
+                  AgentProfile in DB?
+                        ↙       ↘
+                      YES        NO
+                       ↓          │
+                total_executions  │
+                     >= 1         │
+                   ↙        ↘     │
+                 YES         NO   │
+                  ↓           └───┘
+          [Tier 2: Aggregate]     ▼
+                        [Tier 3: Cold-Start Prior (0.41)]
 ```
 
-This gives new agents a score of 1.0 to encourage exploration. Decays naturally as real data accumulates.
+#### Canonical Task Taxonomy (Code-Enforced, Closed Set)
+- **Sales**: `lead_search`, `outreach_drafting`, `crm_update`, `pipeline_analysis`, `deal_qualification`
+- **Support**: `ticket_triage`, `response_drafting`, `ticket_escalation`, `sentiment_analysis`, `csat_analysis`
+- **Research**: `data_query`, `trend_analysis`, `report_generation`, `segment_comparison`, `churn_detection`
+
+Unrecognized or free-text task strings are strictly treated as `None` (no guessing or fuzzing), falling back safely to Tier-2 aggregate profiles.
+
+### Cold Start Priors (agent has no history)
+
+```text
+success_rate     = 0.5   (neutral — no evidence either way)
+avg_latency_ms   = 0.0   → latency_score = 0.5 (neutral fallback for missing/invalid data, never 1.0)
+confidence_score = 0.2   (low prior confidence — unproven agent)
+composite_score  = 0.41  (0.50*0.5 + 0.20*0.5 + 0.30*0.2 = 0.41)
+```
+
+This establishes an honest cold-start prior representing "no empirical evidence yet". As actual executions occur, performance metrics ($SR$, Latency, Confidence) emerge dynamically from real runs and performance-based routing takes over.
+
+### Cold-Start Tie-Breaking & Primary Candidate Selection
+When candidates have identical cold-start priors (0.41), the scheduler deterministically routes to the primary candidate (first candidate registered per department) and records `uncertainty = True`. Secondary candidates accumulate execution history through evaluation trials or explicit candidate benchmarking. This deterministic selection policy is explicitly documented as a non-RL architectural trade-off.
 
 ---
 
@@ -280,20 +326,24 @@ On simulated failure, the tool raises `ToolExecutionError(tool_name, reason)` �
 
 ### What Is Being Measured
 
-ABOS (adaptive planner + performance-based scheduler) vs. Static Baseline (same agents, fixed routing, no scheduler adaptation).
+ABOS (Goal-to-Workflow Planner + Performance-Based Scheduler) vs. Static Baseline (Same Goal-to-Workflow Planner + Fixed Routing Policy).
 
-**The only variable between ABOS and baseline is the routing policy.**
-Everything else — agents, tools, tool variance, recovery module — is identical.
+**The sole independent variable is the routing policy.**
+Everything else — LLM model, prompt decomposition, memory conditions, candidate agents, tool simulator seeds, recovery module — is strictly identical.
 
 ### Metrics
 
-| Metric | Formula | Unit |
+| Metric | Formula / Source | Unit |
 |---|---|---|
-| Task Completion Rate (TCR) | completed_steps / total_steps | % |
-| Routing Accuracy (RA) | steps_with_correct_routing / steps_with_feedback | % |
-| Recovery Success Rate (RSR) | recovered_steps / total_failed_steps | % |
-| Average Step Latency | mean(execution.latency_ms) per scenario | ms |
-| Scheduler Score Correlation | Pearson r(scheduler_score, step_success) | -1 to 1 |
+| Task Completion Rate (TCR) | `completed_steps / total_steps` | % |
+| Ground-Truth Routing Accuracy (RA) | Evaluated post-hoc against the **Simulator Oracle** (`ORACLE_OPTIMAL_ROUTING`) | % |
+| Recovery Success Rate (RSR) | `recovered_steps / (failed_steps + recovered_steps)` (Returns `None` if 0 failures) | % |
+| Average Step Latency | `sum(executed_step_latency) / count(executed_steps)` | ms |
+| Total Scenario Latency | `sum(executed_step_latency)` | ms |
+| Scheduler Score Correlation | Pearson $r(\text{scheduler\_score}, \text{step\_success})$ (Secondary diagnostic) | -1 to 1 |
+
+Primary metrics for the paper: **TCR, Ground-Truth Routing Accuracy, and Average Step Latency.**
+Secondary: RSR, Score Correlation.
 
 Primary metrics for the paper: **TCR and RA.**
 Secondary: RSR, latency, score correlation.
@@ -365,9 +415,9 @@ The baseline is a **static-workflow system** that uses the same agents, tools, a
 Tasks are routed by **department keyword matching** in a fixed priority order:
 
 ```
-if step.assigned_department == "sales"    → always route to sales_agent
-if step.assigned_department == "support"  → always route to support_agent
-if step.assigned_department == "research" → always route to research_agent
+if step.assigned_department == "sales"    → always route to sales_outreach_fast (or sales_agent alias)
+if step.assigned_department == "support"  → always route to support_tier1_fast (or support_agent alias)
+if step.assigned_department == "research" → always route to research_kpi_quick (or research_agent alias)
 ```
 
 Department assignment comes from the same planner LLM call as ABOS. The planner output is identical. The only difference: baseline ignores scheduler scores and always picks the single agent for that department.

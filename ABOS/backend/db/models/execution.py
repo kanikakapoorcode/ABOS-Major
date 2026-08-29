@@ -21,6 +21,7 @@ class Execution(UUIDMixin, TimestampMixin, Base):
     )
     agent_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     department: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    task_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued", index=True)
     input_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     output_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
@@ -28,6 +29,8 @@ class Execution(UUIDMixin, TimestampMixin, Base):
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     latency_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     scheduler_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # token_cost: logged for future analysis only — NOT used in scheduling (SOURCE_OF_TRUTH §11)
+    token_cost: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 

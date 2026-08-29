@@ -16,8 +16,6 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
 from langchain_core.tools import BaseTool
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain_core.prompts import PromptTemplate
 from litellm import acompletion
 
 from backend.agents.state import WorkflowStepState
@@ -32,7 +30,7 @@ class BaseDepartmentAgent(ABC):
     tools: List[BaseTool] = []
 
     def __init__(self):
-        self._executor: AgentExecutor | None = None
+        pass
 
     @abstractmethod
     def _get_system_prompt(self) -> str:
@@ -81,14 +79,33 @@ class BaseDepartmentAgent(ABC):
     ) -> Any:
         """
         Default implementation: single LLM call with the agent's system prompt.
-        Subclasses with tool use can override this to invoke their AgentExecutor.
+
+        The LLM receives the task description and any tool output already in
+        context (from prior completed steps). Tool calls with MockSimulator
+        variance happen when the LLM invokes tools via the ReAct loop — for
+        now this direct LLM call path is used for all steps.
+
+        Returns the LLM response content as a string.
         """
+        import json
+
         system_prompt = self._get_system_prompt()
+
+        # Format prior step outputs for context injection
+        prior_outputs = ""
+        if context.get("completed_steps"):
+            prior_outputs = "\n\nPrior step outputs (use as input context):\n"
+            for s in context["completed_steps"]:
+                output = s.get("output")
+                if isinstance(output, dict):
+                    output = json.dumps(output, indent=2)
+                prior_outputs += f"- {s['title']}: {str(output)[:500]}\n"
+
         user_message = (
             f"Task: {step['title']}\n\n"
             f"Description: {step['description']}\n\n"
-            f"Input data: {step['input_data']}\n\n"
-            f"Additional context: {context}"
+            f"Input data: {json.dumps(step['input_data'], indent=2)}"
+            f"{prior_outputs}"
         )
 
         response = await acompletion(

@@ -99,12 +99,23 @@ def _parse_plan(raw: str) -> List[WorkflowStepState]:
         if agent not in VALID_AGENTS:
             agent = f"{dept}_agent"
 
+        # Validate canonical task_type strictly (never guess unknown values)
+        from backend.agents.tasks.taxonomy import validate_task_type
+        raw_tt = raw_step.get("task_type")
+        canonical_tt = validate_task_type(dept, raw_tt)
+        if raw_tt and canonical_tt is None:
+            logger.warning(
+                f"Step {i}: unrecognized task_type '{raw_tt}' for department '{dept}'. "
+                f"Setting to None (fallback to aggregate profile)."
+            )
+
         step: WorkflowStepState = {
             "step_index": raw_step.get("step_index", i),
             "title": str(raw_step.get("title", f"Step {i}"))[:200],
             "description": str(raw_step.get("description", ""))[:1000],
             "assigned_department": dept,
             "assigned_agent": agent,
+            "task_type": canonical_tt,
             "input_data": raw_step.get("input_data") or {},
             "output_data": None,
             "status": "pending",

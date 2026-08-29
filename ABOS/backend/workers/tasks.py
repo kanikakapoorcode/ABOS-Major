@@ -136,6 +136,10 @@ def update_agent_profile_task(self, feedback_id: str):
         from sqlalchemy import select, func
 
         async with AsyncSessionLocal() as db:
+            from backend.db.models.agent_profile import AgentTaskProfile
+            from backend.agents.tasks.taxonomy import validate_task_type
+            from sqlalchemy import and_
+
             # Load feedback
             fb_result = await db.execute(select(Feedback).where(Feedback.id == feedback_id))
             feedback = fb_result.scalar_one_or_none()
@@ -152,9 +156,13 @@ def update_agent_profile_task(self, feedback_id: str):
 
             agent_name = execution.agent_name
             department = execution.department
+            task_type = validate_task_type(department, execution.task_type)
+            execution_succeeded = execution.status == "success"
+            feedback_correct = feedback.rating == "correct" if feedback.rating else None
 
-            # Compute rolling success rate (last N executions)
             window = 50
+
+            # ── 1. Aggregate Profile Computation ──────────────────────────────
             recent = await db.execute(
                 select(Execution.status)
                 .where(Execution.agent_name == agent_name)
@@ -163,9 +171,8 @@ def update_agent_profile_task(self, feedback_id: str):
             )
             statuses = [r[0] for r in recent.all()]
             success_count = sum(1 for s in statuses if s == "success")
-            success_rate = success_count / len(statuses) if statuses else 1.0
+            success_rate = success_count / len(statuses) if statuses else 0.5
 
-            # Average latency
             lat_result = await db.execute(
                 select(func.avg(Execution.latency_ms))
                 .where(
@@ -177,16 +184,12 @@ def update_agent_profile_task(self, feedback_id: str):
             )
             avg_latency = float(lat_result.scalar() or 0.0)
 
-            # Update confidence score
             profile_result = await db.execute(
                 select(AgentProfile).where(AgentProfile.agent_name == agent_name)
             )
             profile = profile_result.scalar_one_or_none()
 
-            current_confidence = profile.confidence_score if profile else 1.0
-            execution_succeeded = execution.status == "success"
-            feedback_correct = feedback.rating == "correct" if feedback.rating else None
-
+            current_confidence = profile.confidence_score if profile else 0.2
             new_confidence = update_confidence_score(
                 current_confidence, execution_succeeded, feedback_correct
             )
@@ -202,7 +205,6 @@ def update_agent_profile_task(self, feedback_id: str):
                 profile.confidence_score = new_confidence
                 profile.total_executions = total_executions
             else:
-                from datetime import datetime, timezone
                 new_profile = AgentProfile(
                     agent_name=agent_name,
                     department=department,
@@ -214,10 +216,90 @@ def update_agent_profile_task(self, feedback_id: str):
                 )
                 db.add(new_profile)
 
+            # ── 2. Task-Specific Profile Computation (if valid task_type) ─────
+            if task_type:
+                task_recent = await db.execute(
+                    select(Execution.status)
+                    .where(
+                        and_(
+                            Execution.agent_name == agent_name,
+                            Execution.department == department,
+                            Execution.task_type == task_type,
+                        )
+                    )
+                    .order_by(Execution.created_at.desc())
+                    .limit(window)
+                )
+                task_statuses = [r[0] for r in task_recent.all()]
+                task_succ_count = sum(1 for s in task_statuses if s == "success")
+                task_success_rate = task_succ_count / len(task_statuses) if task_statuses else 0.5
+
+                task_lat_result = await db.execute(
+                    select(func.avg(Execution.latency_ms))
+                    .where(
+                        and_(
+                            Execution.agent_name == agent_name,
+                            Execution.department == department,
+                            Execution.task_type == task_type,
+                            Execution.latency_ms.isnot(None),
+                        )
+                    )
+                    .order_by(Execution.created_at.desc())
+                    .limit(window)
+                )
+                task_avg_latency = float(task_lat_result.scalar() or 0.0)
+
+                task_profile_result = await db.execute(
+                    select(AgentTaskProfile).where(
+                        and_(
+                            AgentTaskProfile.agent_name == agent_name,
+                            AgentTaskProfile.department == department,
+                            AgentTaskProfile.task_type == task_type,
+                        )
+                    )
+                )
+                task_profile = task_profile_result.scalar_one_or_none()
+
+                task_curr_conf = task_profile.confidence_score if task_profile else 0.2
+                task_new_conf = update_confidence_score(
+                    task_curr_conf, execution_succeeded, feedback_correct
+                )
+
+                task_total_res = await db.execute(
+                    select(func.count(Execution.id)).where(
+                        and_(
+                            Execution.agent_name == agent_name,
+                            Execution.department == department,
+                            Execution.task_type == task_type,
+                        )
+                    )
+                )
+                task_total_execs = task_total_res.scalar() or 0
+
+                if task_profile:
+                    task_profile.success_rate = round(task_success_rate, 4)
+                    task_profile.avg_latency_ms = round(task_avg_latency, 2)
+                    task_profile.confidence_score = task_new_conf
+                    task_profile.total_executions = task_total_execs
+                else:
+                    new_task_profile = AgentTaskProfile(
+                        agent_name=agent_name,
+                        department=department,
+                        task_type=task_type,
+                        success_rate=round(task_success_rate, 4),
+                        avg_latency_ms=round(task_avg_latency, 2),
+                        confidence_score=task_new_conf,
+                        total_executions=task_total_execs,
+                        window_size=window,
+                    )
+                    db.add(new_task_profile)
+
+            # Atomic commit of both aggregate and task-specific profiles
             await db.commit()
             logger.info(
-                f"[Task] Updated profile for '{agent_name}': "
-                f"sr={success_rate:.2f}, lat={avg_latency:.0f}ms, conf={new_confidence:.2f}"
+                f"[Task] Transactionally updated profiles for '{agent_name}' "
+                f"(Aggregate: sr={success_rate:.2f}, lat={avg_latency:.0f}ms; "
+                f"Task '{task_type}': {'updated' if task_type else 'none'})"
             )
 
     _run_async(_run())

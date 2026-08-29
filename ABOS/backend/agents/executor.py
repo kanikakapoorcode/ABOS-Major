@@ -19,13 +19,31 @@ logger = logging.getLogger(__name__)
 # Agent registry — maps agent name to instance
 # Imported lazily to avoid circular imports at module load time
 def _get_agent_registry():
-    from backend.agents.department.sales import sales_agent
-    from backend.agents.department.support import support_agent
-    from backend.agents.department.research import research_agent
+    from backend.agents.department.sales import (
+        sales_agent,
+        sales_outreach_fast,
+        sales_enterprise_thorough,
+    )
+    from backend.agents.department.support import (
+        support_agent,
+        support_tier1_fast,
+        support_tier2_specialist,
+    )
+    from backend.agents.department.research import (
+        research_agent,
+        research_kpi_quick,
+        research_deep_analyst,
+    )
     return {
         "sales_agent": sales_agent,
+        "sales_outreach_fast": sales_outreach_fast,
+        "sales_enterprise_thorough": sales_enterprise_thorough,
         "support_agent": support_agent,
+        "support_tier1_fast": support_tier1_fast,
+        "support_tier2_specialist": support_tier2_specialist,
         "research_agent": research_agent,
+        "research_kpi_quick": research_kpi_quick,
+        "research_deep_analyst": research_deep_analyst,
     }
 
 
