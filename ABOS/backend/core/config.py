@@ -58,4 +58,11 @@ class Settings(BaseSettings):
     SCHEDULER_WINDOW_SIZE: int = 50  # rolling window for performance tracking
 
 
+import os
+
 settings = Settings()
+
+if settings.GEMINI_API_KEY and "GEMINI_API_KEY" not in os.environ:
+    os.environ["GEMINI_API_KEY"] = settings.GEMINI_API_KEY
+if settings.OPENAI_API_KEY and "OPENAI_API_KEY" not in os.environ:
+    os.environ["OPENAI_API_KEY"] = settings.OPENAI_API_KEY

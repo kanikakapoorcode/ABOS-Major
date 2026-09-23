@@ -1,13 +1,13 @@
 """
-Statistical Comparison Module — Wilcoxon Signed-Rank Test & Effect Sizes.
+Statistical Comparison Module — Pure Python Wilcoxon Signed-Rank Test & Effect Sizes.
 
 Performs paired non-parametric statistical hypothesis testing per scenario
-and generates aggregate descriptive summaries.
+and generates aggregate descriptive summaries with zero external C-dependencies.
 """
 
 from typing import Dict, List, Tuple, Any, Optional
 from dataclasses import dataclass
-from scipy import stats
+import math
 
 from evaluation.metrics import TrialMetrics, AggregatedMetrics, aggregate
 
@@ -49,55 +49,67 @@ class ScenarioComparisonResult:
     note: Optional[str] = None
 
 
-def _compute_wilcoxon_and_rank_biserial(a_vals: List[float], b_vals: List[float]) -> Tuple[float, float, float, int]:
+def _normal_cdf(z: float) -> float:
+    """Standard normal cumulative distribution function using math.erf."""
+    return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
+
+
+def _pure_wilcoxon_signed_rank(a_vals: List[float], b_vals: List[float]) -> Tuple[float, float, float, int]:
     """
-    Compute Wilcoxon signed-rank test and exact matched-pairs rank-biserial correlation.
+    Pure Python implementation of the Wilcoxon Signed-Rank Test with Pratt tie-handling
+    and matched-pairs rank-biserial correlation effect size.
     Returns: (W_statistic, p_value, rank_biserial_r, n_nonzero)
     """
     diffs = [a - b for a, b in zip(a_vals, b_vals)]
-    nonzero_diffs = [d for d in diffs if d != 0]
-    n_nonzero = len(nonzero_diffs)
+    nonzero = [(abs(d), 1 if d > 0 else -1) for d in diffs if d != 0.0]
+    n = len(nonzero)
 
-    if n_nonzero == 0:
+    if n == 0:
         return 0.0, 1.0, 0.0, 0
 
-    try:
-        # Wilcoxon test with Pratt zero-method to handle ties
-        res = stats.wilcoxon(a_vals, b_vals, zero_method="pratt")
-        w_stat = float(res.statistic)
-        p_val = float(res.pvalue)
+    # Sort by absolute difference
+    nonzero.sort(key=lambda x: x[0])
 
-        # Rank-Biserial Correlation r_rb = (W+ - W-) / (W+ + W-)
-        # Sum of positive ranks vs negative ranks
-        ranked_data = []
-        for d in nonzero_diffs:
-            ranked_data.append((abs(d), 1 if d > 0 else -1))
-        ranked_data.sort(key=lambda x: x[0])
+    # Assign fractional ranks for ties
+    ranks = [0.0] * n
+    tie_counts = []
+    i = 0
+    while i < n:
+        j = i
+        while j < n and nonzero[j][0] == nonzero[i][0]:
+            j += 1
+        t_k = j - i
+        if t_k > 1:
+            tie_counts.append(t_k)
+        avg_rank = (i + 1 + j) / 2.0
+        for k in range(i, j):
+            ranks[k] = avg_rank
+        i = j
 
-        # Assign average ranks for ties
-        w_plus = 0.0
-        w_minus = 0.0
-        n_nz = len(ranked_data)
+    w_plus = sum(ranks[k] for k in range(n) if nonzero[k][1] > 0)
+    w_minus = sum(ranks[k] for k in range(n) if nonzero[k][1] < 0)
+    w_stat = min(w_plus, w_minus)
 
-        i = 0
-        while i < n_nz:
-            j = i
-            while j < n_nz and ranked_data[j][0] == ranked_data[i][0]:
-                j += 1
-            avg_rank = (i + 1 + j) / 2.0
-            for k in range(i, j):
-                if ranked_data[k][1] > 0:
-                    w_plus += avg_rank
-                else:
-                    w_minus += avg_rank
-            i = j
+    # Rank-biserial correlation r_rb = (W+ - W-) / (W+ + W-)
+    w_total = w_plus + w_minus
+    r_rb = (w_plus - w_minus) / w_total if w_total > 0 else 0.0
 
-        w_total = w_plus + w_minus
-        r_rb = (w_plus - w_minus) / w_total if w_total > 0 else 0.0
-        return round(w_stat, 2), round(p_val, 4), round(r_rb, 4), n_nonzero
+    # Normal approximation with continuity correction for p-value
+    mu = n * (n + 1) / 4.0
+    tie_adjustment = sum(t**3 - t for t in tie_counts) / 48.0
+    var = (n * (n + 1) * (2 * n + 1) / 24.0) - tie_adjustment
 
-    except Exception:
-        return 0.0, 1.0, 0.0, n_nonzero
+    if var <= 0:
+        p_val = 1.0
+    else:
+        sigma = math.sqrt(var)
+        diff_from_mean = abs(w_plus - mu)
+        # Continuity correction (0.5)
+        z = max(0.0, diff_from_mean - 0.5) / sigma
+        p_val = 2.0 * (1.0 - _normal_cdf(z))
+        p_val = min(1.0, max(0.0, p_val))
+
+    return round(w_stat, 2), round(p_val, 4), round(r_rb, 4), n
 
 
 def compare_scenario_trials(
@@ -126,11 +138,11 @@ def compare_scenario_trials(
     lat_diffs = [a - b for a, b in zip(lat_abos, lat_base)]
     lat_delta = sum(lat_diffs) / n
 
-    w_stat_tcr, p_val_tcr, r_rb_tcr, n_nz_tcr = _compute_wilcoxon_and_rank_biserial(tcr_abos, tcr_base)
-    w_stat_lat, p_val_lat, r_rb_lat, n_nz_lat = _compute_wilcoxon_and_rank_biserial(lat_abos, lat_base)
+    w_stat_tcr, p_val_tcr, r_rb_tcr, n_nz_tcr = _pure_wilcoxon_signed_rank(tcr_abos, tcr_base)
+    w_stat_lat, p_val_lat, r_rb_lat, n_nz_lat = _pure_wilcoxon_signed_rank(lat_abos, lat_base)
 
     note = None
-    if n_nz_tcr < 5 and n_nz_tcr > 0:
+    if 0 < n_nz_tcr < 5:
         note = "Interpretation is limited because few paired differences are non-zero."
 
     oa_abos = abos_agg.oracle_agreement_mean

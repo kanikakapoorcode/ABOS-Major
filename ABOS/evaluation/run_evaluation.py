@@ -9,11 +9,15 @@ Both systems share identical seeds, prompt decomposition, and memory conditions 
 The Static Baseline strictly ignores profile data and executes fixed departmental routing.
 """
 
+import os
 import asyncio
 import argparse
 import logging
 from typing import Dict, List, Any, Optional
 from unittest.mock import patch, AsyncMock, MagicMock
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from evaluation.scenarios import SCENARIOS, SCENARIO_IDS
 from evaluation.oracle import get_oracle_optimal_agent
