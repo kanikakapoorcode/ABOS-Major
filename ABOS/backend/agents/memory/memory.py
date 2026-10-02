@@ -77,7 +77,10 @@ async def retrieve_similar_feedback(goal_description: str) -> List[Dict[str, Any
                     "similarity": round(float(row["similarity"]), 4),
                 })
     except Exception as e:
-        logger.error(f"[Memory] Retrieval failed: {e}")
+        if "type \"vector\" does not exist" in str(e) or "UndefinedObjectError" in type(e).__name__:
+            logger.info("[Memory] pgvector extension not available in database — skipping memory retrieval.")
+        else:
+            logger.error(f"[Memory] Retrieval failed: {e}")
 
     logger.info(f"[Memory] Retrieved {len(results)} similar feedback entries.")
     return results

@@ -30,10 +30,11 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
 
     # ── pgvector extension ────────────────────────────────────────────────────
-    # Must exist before the feedback table which uses Vector(1536).
-    # The Docker postgres-init script also runs this, but we do it here too
-    # so plain `alembic upgrade head` works without Docker.
-    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    # Must exist before the feedback table if using Vector(1536).
+    bind = op.get_bind()
+    has_vector = bind.execute(sa.text("SELECT 1 FROM pg_available_extensions WHERE name = 'vector'")).scalar() is not None
+    if has_vector:
+        op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
     # ── users ─────────────────────────────────────────────────────────────────
     op.create_table(
@@ -222,7 +223,8 @@ def upgrade() -> None:
     # Created last because it references executions and uses the vector type.
     # We use raw SQL for the full table so the vector(1536) column is handled
     # correctly without depending on pgvector's SQLAlchemy type at migration time.
-    op.execute("""
+    emb_type = "vector(1536)" if has_vector else "text"
+    op.execute(f"""
         CREATE TABLE feedback (
             id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -230,7 +232,7 @@ def upgrade() -> None:
             rating       VARCHAR(20) NOT NULL,
             correction   TEXT,
             suggested_agent VARCHAR(100),
-            embedding    vector(1536),
+            embedding    {emb_type},
             created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
         )
@@ -241,12 +243,13 @@ def upgrade() -> None:
 
     # IVFFlat index for fast approximate nearest-neighbour search on embeddings
     # lists=100 is appropriate for up to ~1M vectors; adjust if dataset grows
-    op.execute("""
-        CREATE INDEX ix_feedback_embedding_ivfflat
-        ON feedback
-        USING ivfflat (embedding vector_cosine_ops)
-        WITH (lists = 100)
-    """)
+    if has_vector:
+        op.execute("""
+            CREATE INDEX ix_feedback_embedding_ivfflat
+            ON feedback
+            USING ivfflat (embedding vector_cosine_ops)
+            WITH (lists = 100)
+        """)
 
 
 def downgrade() -> None:
