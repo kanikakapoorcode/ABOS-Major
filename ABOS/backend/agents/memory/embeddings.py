@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Map LLM providers to their embedding models
 EMBEDDING_MODEL_MAP = {
-    "gemini": "gemini/text-embedding-004",
+    "gemini": "gemini/gemini-embedding-001",
     "openai": "openai/text-embedding-3-small",
 }
 
