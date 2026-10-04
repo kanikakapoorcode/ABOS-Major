@@ -26,7 +26,7 @@ langchain-core = "^0.3.0"
 litellm = "^1.50.0"
 
 # Data validation
-pydantic = "^2.9.0"
+pydantic = { extras = ["email"], version = "^2.9.0" }
 pydantic-settings = "^2.6.0"
 
 # Database
@@ -43,6 +43,7 @@ redis = "^5.2.0"
 # Auth
 python-jose = { extras = ["cryptography"], version = "^3.3.0" }
 passlib = { extras = ["bcrypt"], version = "^1.7.4" }
+bcrypt = "4.0.1"
 
 # Evaluation / analysis
 pandas = "^2.2.0"
@@ -59,6 +60,7 @@ tenacity = "^9.0.0"
 pytest = "^8.3.0"
 pytest-asyncio = "^0.24.0"
 pytest-cov = "^6.0.0"
+pytest-env = "^1.1.5"
 httpx = "^0.28.0"
 factory-boy = "^3.3.1"
 ruff = "^0.8.0"

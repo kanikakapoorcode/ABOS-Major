@@ -29,10 +29,11 @@ class GoalService:
         await self.db.refresh(goal)
         return goal
 
-    async def get(self, goal_id: str, user_id: str) -> Optional[Goal]:
-        result = await self.db.execute(
-            select(Goal).where(Goal.id == goal_id, Goal.user_id == user_id)
-        )
+    async def get(self, goal_id: str, user_id: Optional[str] = None) -> Optional[Goal]:
+        query = select(Goal).where(Goal.id == goal_id)
+        if user_id is not None:
+            query = query.where(Goal.user_id == user_id)
+        result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
     async def list_by_user(self, user_id: str, skip: int = 0, limit: int = 20) -> List[Goal]:

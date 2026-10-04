@@ -75,13 +75,28 @@ def _parse_plan(raw: str) -> List[WorkflowStepState]:
     try:
         # Strip markdown code fences if the model includes them despite instructions
         cleaned = raw.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("```")[1]
+        if "```" in cleaned:
+            parts = cleaned.split("```")
+            if len(parts) >= 3:
+                cleaned = parts[1]
+            elif cleaned.startswith("```"):
+                cleaned = parts[1]
             if cleaned.startswith("json"):
                 cleaned = cleaned[4:]
-        steps_raw = json.loads(cleaned)
+        steps_raw = json.loads(cleaned.strip())
     except json.JSONDecodeError as e:
         raise ValueError(f"Planner returned invalid JSON: {e}\nRaw output: {raw[:500]}")
+
+    if isinstance(steps_raw, dict):
+        for key in ("steps", "workflow_steps", "workflow_plan", "plan"):
+            if key in steps_raw and isinstance(steps_raw[key], list):
+                steps_raw = steps_raw[key]
+                break
+        else:
+            for val in steps_raw.values():
+                if isinstance(val, list):
+                    steps_raw = val
+                    break
 
     if not isinstance(steps_raw, list) or len(steps_raw) == 0:
         raise ValueError("Planner returned empty or non-list response.")

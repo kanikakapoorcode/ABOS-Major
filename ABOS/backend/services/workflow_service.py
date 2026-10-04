@@ -26,12 +26,11 @@ class WorkflowService:
         await self.db.refresh(workflow)
         return workflow
 
-    async def get(self, workflow_id: str, user_id: str) -> Optional[Workflow]:
-        result = await self.db.execute(
-            select(Workflow)
-            .options(selectinload(Workflow.steps))
-            .where(Workflow.id == workflow_id, Workflow.user_id == user_id)
-        )
+    async def get(self, workflow_id: str, user_id: Optional[str] = None) -> Optional[Workflow]:
+        query = select(Workflow).options(selectinload(Workflow.steps)).where(Workflow.id == workflow_id)
+        if user_id is not None:
+            query = query.where(Workflow.user_id == user_id)
+        result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
     async def list_by_user(self, user_id: str, skip: int = 0, limit: int = 20) -> List[Workflow]:

@@ -95,9 +95,7 @@ def _route_after_executor(
     if status in ("failed", "retrying"):
         return "recovery"
 
-    if step_idx + 1 >= len(plan):
-        return "summarizer"
-
+    # More steps to execute
     return "executor"
 
 
