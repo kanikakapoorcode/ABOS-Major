@@ -62,26 +62,30 @@ async def _load_agent_profiles(
     profiles: Dict[str, AgentScoreInput] = {}
     valid_task = validate_task_type(department, task_type)
 
-    async with AsyncSessionLocal() as session:
-        # 1. Fetch aggregate profiles
-        agg_result = await session.execute(
-            select(AgentProfile).where(AgentProfile.agent_name.in_(agent_names))
-        )
-        agg_profiles = {p.agent_name: p for p in agg_result.scalars().all()}
+    agg_profiles = {}
+    task_profiles = {}
+    try:
+        async with AsyncSessionLocal() as session:
+            # 1. Fetch aggregate profiles
+            agg_result = await session.execute(
+                select(AgentProfile).where(AgentProfile.agent_name.in_(agent_names))
+            )
+            agg_profiles = {p.agent_name: p for p in agg_result.scalars().all()}
 
-        # 2. Fetch task-specific profiles if canonical task_type is present
-        task_profiles = {}
-        if valid_task:
-            task_result = await session.execute(
-                select(AgentTaskProfile).where(
-                    and_(
-                        AgentTaskProfile.agent_name.in_(agent_names),
-                        AgentTaskProfile.department == department,
-                        AgentTaskProfile.task_type == valid_task,
+            # 2. Fetch task-specific profiles if canonical task_type is present
+            if valid_task:
+                task_result = await session.execute(
+                    select(AgentTaskProfile).where(
+                        and_(
+                            AgentTaskProfile.agent_name.in_(agent_names),
+                            AgentTaskProfile.department == department,
+                            AgentTaskProfile.task_type == valid_task,
+                        )
                     )
                 )
-            )
-            task_profiles = {p.agent_name: p for p in task_result.scalars().all()}
+                task_profiles = {p.agent_name: p for p in task_result.scalars().all()}
+    except Exception as e:
+        logger.warning(f"[Scheduler] Could not query DB profiles ({e}). Falling back to Tier-3 cold start.")
 
     for name in agent_names:
         # ── Tier 1: Task-Specific Profile (with sufficiency check) ────────────
