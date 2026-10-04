@@ -1,0 +1,51 @@
+# Root .gitignore for ABOS-Major
+
+# Secrets and environment variables
+.env
+.env.*
+*.env
+**/.env
+**/.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+powershell.bat
+
+# Logs & temp files
+*.log
+logs/
+workflow_*.txt
+*.tmp
+
+# Frontend dependencies and builds
+**/node_modules/
+**/dist/
