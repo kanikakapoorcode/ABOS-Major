@@ -66,3 +66,12 @@ mlartifacts/
 # Celery
 celerybeat-schedule
 celerybeat.pid
+
+# Debug output / temp files
+*_out.txt
+*_err.txt
+*.bat
+import_check*
+gemini_test*
+workflow_out*
+workflow_err*
