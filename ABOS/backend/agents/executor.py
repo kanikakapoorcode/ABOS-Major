@@ -92,6 +92,10 @@ async def executor_node(state: ABOSState) -> Dict[str, Any]:
             "logs": [f"Executor: unknown agent '{agent_name}' for step {step_idx}."],
         }
 
+    # Respect LLM rate limits — wait before each step
+    if step_idx > 0:
+        await asyncio.sleep(8)
+
     # Build context from previously completed steps
     context = {
         "completed_steps": [

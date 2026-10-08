@@ -159,7 +159,7 @@ async def _call_planner_llm(system_prompt: str, user_prompt: str) -> str:
         ],
         response_format={"type": "json_object"},
         temperature=0.2,
-        max_tokens=2048,
+        max_tokens=800,
     )
     return response.choices[0].message.content
 

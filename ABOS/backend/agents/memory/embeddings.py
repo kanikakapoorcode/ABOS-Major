@@ -24,7 +24,11 @@ EMBEDDING_DIM = 1536  # Must match Vector(1536) in the feedback model
 def _get_embedding_model() -> str:
     """Derive embedding model from ACTIVE_LLM provider prefix."""
     provider = settings.ACTIVE_LLM.split("/")[0].lower()
-    return EMBEDDING_MODEL_MAP.get(provider, "openai/text-embedding-3-small")
+    model = EMBEDDING_MODEL_MAP.get(provider)
+    if model is None:
+        logger.warning(f"[Embeddings] No embedding model for provider {provider!r} — skipping.")
+        return None
+    return model
 
 
 async def embed_text(text: str) -> List[float]:
@@ -37,6 +41,8 @@ async def embed_text(text: str) -> List[float]:
 
     try:
         model = _get_embedding_model()
+        if model is None:
+            return [0.0] * EMBEDDING_DIM
         response = await aembedding(model=model, input=[text])
         embedding = response.data[0]["embedding"]
 
