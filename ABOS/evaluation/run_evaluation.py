@@ -195,7 +195,7 @@ async def run_scenario_experiment(
             mode=mode,
         )
         abos_trials.append(abos_m)
-        await asyncio.sleep(2)
+        await asyncio.sleep(15)
 
         # 2. Run Baseline trial with exact same seed
         base_m = await run_single_trial(
@@ -208,7 +208,7 @@ async def run_scenario_experiment(
             mode=mode,
         )
         baseline_trials.append(base_m)
-        await asyncio.sleep(2)
+        await asyncio.sleep(15)
 
     return compare_scenario_trials(
         scenario_id=scenario_id,

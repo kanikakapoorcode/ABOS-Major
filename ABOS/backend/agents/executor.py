@@ -5,6 +5,7 @@ executor_node: Runs the current workflow step via the assigned department agent.
 summarizer_node: Generates a natural-language summary of the completed run.
 """
 
+import asyncio
 import logging
 from typing import Any, Dict
 
@@ -91,6 +92,10 @@ async def executor_node(state: ABOSState) -> Dict[str, Any]:
             "logs": [f"Executor: unknown agent '{agent_name}' for step {step_idx}."],
         }
 
+    # Respect LLM rate limits — wait before each step
+    if step_idx > 0:
+        await asyncio.sleep(8)
+
     # Build context from previously completed steps
     context = {
         "completed_steps": [
@@ -108,6 +113,7 @@ async def executor_node(state: ABOSState) -> Dict[str, Any]:
         current_step["status"] = "completed"
         current_step["output_data"] = {"output": result["output"]}
         updated_plan[step_idx] = current_step
+        await asyncio.sleep(5)  # respect rate limit between steps
         return {
             "workflow_plan": updated_plan,
             "completed_steps": [current_step],
@@ -182,7 +188,7 @@ async def summarizer_node(state: ABOSState) -> Dict[str, Any]:
                 },
             ],
             temperature=0.3,
-            max_tokens=512,
+            max_tokens=150,
         )
         summary = response.choices[0].message.content
     except Exception as e:

@@ -115,6 +115,6 @@ class BaseDepartmentAgent(ABC):
                 {"role": "user", "content": user_message},
             ],
             temperature=0.3,
-            max_tokens=1024,
+            max_tokens=128,
         )
         return response.choices[0].message.content

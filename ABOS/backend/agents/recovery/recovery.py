@@ -7,6 +7,7 @@ Reference: arxiv 2606.01416
 Handles: failure detection, classification, and bounded retry/reroute logic.
 """
 
+import asyncio
 import logging
 from typing import Any, Dict
 
@@ -70,6 +71,7 @@ async def recovery_node(state: ABOSState) -> Dict[str, Any]:
     ]
 
     if action == RecoveryAction.RETRY or action == RecoveryAction.RETRY_WITH_TIMEOUT:
+        await asyncio.sleep(10)  # wait for rate limit window to reset
         current_step["status"] = "retrying"
         current_step["retry_count"] = retry_count + 1
         updated_plan[step_idx] = current_step
@@ -80,6 +82,7 @@ async def recovery_node(state: ABOSState) -> Dict[str, Any]:
         }
 
     elif action == RecoveryAction.REROUTE:
+        await asyncio.sleep(10)  # wait before rerouting
         # Find an alternative agent in the same department
         dept_agents = AGENT_REGISTRY.get(current_step["assigned_department"], [])
         alternatives = [a for a in dept_agents if a != current_step["assigned_agent"]]
