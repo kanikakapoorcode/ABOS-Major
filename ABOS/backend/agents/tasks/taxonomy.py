@@ -33,6 +33,7 @@ CANONICAL_TASK_TYPES: Dict[str, Set[str]] = {
         "report_generation",
         "segment_comparison",
         "churn_detection",
+        "quick_commerce_analysis",   # trend mining from Blinkit/Zepto/Swiggy Instamart
     },
 }
 

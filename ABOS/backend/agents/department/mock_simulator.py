@@ -61,11 +61,12 @@ TOOL_PROFILES: Dict[str, ToolProfile] = {
     "analyze_sentiment":ToolProfile(0.18, 1000, 200, 0.25),
     "get_csat_summary": ToolProfile(0.22, 1200, 250, 0.15),
     # ── Research ───────────────────────────────────────────────────────────
-    "query_data":           ToolProfile(0.20, 1800, 400, 0.15),
-    "analyze_trends":       ToolProfile(0.18, 2200, 500, 0.20),
-    "generate_report":      ToolProfile(0.15, 2000, 400, 0.25),
-    "compare_segments":     ToolProfile(0.22, 2500, 500, 0.20),
-    "detect_churn_signals": ToolProfile(0.25, 2800, 600, 0.30),
+    "query_data":                ToolProfile(0.20, 1800, 400, 0.15),
+    "analyze_trends":            ToolProfile(0.18, 2200, 500, 0.20),
+    "generate_report":           ToolProfile(0.15, 2000, 400, 0.25),
+    "compare_segments":          ToolProfile(0.22, 2500, 500, 0.20),
+    "detect_churn_signals":      ToolProfile(0.25, 2800, 600, 0.30),
+    "quick_commerce_trend":      ToolProfile(0.20, 2400, 500, 0.15),
 }
 
 # Fallback for any tool not in the table above
