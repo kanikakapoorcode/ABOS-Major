@@ -50,6 +50,24 @@ async def recovery_node(state: ABOSState) -> Dict[str, Any]:
 
     current_step: WorkflowStepState = dict(plan[step_idx])
     error_msg = current_step.get("error_message") or "Unknown error"
+
+    # compliance_failed steps are treated as unrecoverable — skip immediately
+    if current_step.get("status") == "compliance_failed":
+        log_messages = [
+            f"Recovery: step {step_idx} ('{current_step['title']}') "
+            "has compliance_failed status — skipping without retry."
+        ]
+        current_step["status"] = "failed"
+        updated_plan = list(plan)
+        updated_plan[step_idx] = current_step
+        return {
+            "workflow_plan": updated_plan,
+            "failed_steps": [current_step],
+            "current_step_index": step_idx + 1,
+            "recovery_attempts": 0,
+            "logs": log_messages,
+        }
+
     retry_count = current_step.get("retry_count", 0)
 
     failure_type = classify_failure(error_msg, retry_count, max_attempts)

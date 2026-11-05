@@ -20,7 +20,7 @@ class WorkflowStepState(TypedDict):
     task_type: Optional[str]        # canonical task type (e.g. "lead_search", "ticket_triage")
     input_data: Dict[str, Any]
     output_data: Optional[Dict[str, Any]]
-    status: str                     # pending | running | completed | failed | retrying
+    status: str                     # pending | running | completed | failed | retrying | compliance_failed
     retry_count: int
     latency_ms: Optional[float]
     scheduler_score: Optional[float]
@@ -45,6 +45,16 @@ class ABOSState(TypedDict):
     goal_context: Optional[Dict[str, Any]]
     target_departments: Optional[List[str]]
 
+    # ── Language ───────────────────────────────────────────────────────────
+    # BCP-47 tag detected by language_node (e.g. "hi", "mr", "en")
+    detected_language: Optional[str]
+    # Original user-submitted text preserved for reference / audit
+    original_goal_title: Optional[str]
+    original_goal_description: Optional[str]
+    # Localised versions of final output (set by summarizer after translation)
+    localised_summary: Optional[str]
+    localised_compliance_flags: Annotated[List[str], operator.add]
+
     # ── Planning ───────────────────────────────────────────────────────────
     workflow_plan: Optional[List[WorkflowStepState]]   # output of the planner node
     current_step_index: int
@@ -61,8 +71,14 @@ class ABOSState(TypedDict):
     recovery_attempts: int
     max_recovery_attempts: int
 
+    # ── Compliance ─────────────────────────────────────────────────────────
+    # Plan-level review result (set by compliance_plan_node)
+    compliance_plan_result: Optional[Dict[str, Any]]
+    # Accumulated compliance flags across plan + all step outputs
+    compliance_flags: Annotated[List[str], operator.add]
+
     # ── Final output ───────────────────────────────────────────────────────
-    final_status: Optional[str]     # completed | failed | partially_completed
+    final_status: Optional[str]     # completed | failed | partially_completed | compliance_blocked
     summary: Optional[str]          # LLM-generated summary of the run
     error: Optional[str]
 

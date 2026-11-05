@@ -14,6 +14,7 @@ class FailureType(str, Enum):
     LLM_ERROR = "llm_error"          # transient LLM API error
     TOOL_ERROR = "tool_error"        # tool call raised an exception
     INVALID_OUTPUT = "invalid_output" # LLM output failed validation
+    COMPLIANCE_VIOLATION = "compliance_violation"  # step output blocked by compliance review
     REROUTE = "reroute"              # agent consistently failing — try different agent
     UNRECOVERABLE = "unrecoverable"  # max retries exceeded or unknown error
 
@@ -38,6 +39,8 @@ def classify_failure(error_message: str, retry_count: int, max_retries: int) -> 
 
     err = error_message.lower()
 
+    if any(kw in err for kw in ["compliance", "compliance_failed", "blocked by compliance"]):
+        return FailureType.COMPLIANCE_VIOLATION
     if any(kw in err for kw in ["timeout", "timed out", "deadline"]):
         return FailureType.TIMEOUT
     if any(kw in err for kw in ["rate limit", "quota", "429", "503", "overloaded"]):
@@ -63,6 +66,11 @@ def decide_recovery_action(
     Maps to the bounded recovery budget approach from Self-Healing Orchestrators (2026).
     """
     if failure_type == FailureType.UNRECOVERABLE:
+        return RecoveryAction.SKIP
+
+    # Compliance violations are never retried — the output is semantically wrong,
+    # not transiently broken. Skip the step and flag it in the summary.
+    if failure_type == FailureType.COMPLIANCE_VIOLATION:
         return RecoveryAction.SKIP
 
     if failure_type == FailureType.TIMEOUT:

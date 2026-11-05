@@ -13,6 +13,7 @@ from litellm import acompletion
 
 from backend.agents.state import ABOSState, WorkflowStepState
 from backend.agents.planner.prompts import SUMMARIZER_SYSTEM_PROMPT, SUMMARIZER_USER_PROMPT
+from backend.agents.language.language import translate_output
 from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -173,6 +174,10 @@ async def summarizer_node(state: ABOSState) -> Dict[str, Any]:
         for s in failed
     ) or "None"
 
+    # Include compliance flags raised during the run
+    compliance_flags = state.get("compliance_flags") or []
+    compliance_str = "\n".join(compliance_flags) if compliance_flags else "None"
+
     try:
         response = await acompletion(
             model=settings.ACTIVE_LLM,
@@ -184,11 +189,12 @@ async def summarizer_node(state: ABOSState) -> Dict[str, Any]:
                         goal_description=state["goal_description"],
                         completed_steps=completed_str,
                         failed_steps=failed_str,
+                        compliance_flags=compliance_str,
                     ),
                 },
             ],
             temperature=0.3,
-            max_tokens=150,
+            max_tokens=200,
         )
         summary = response.choices[0].message.content
     except Exception as e:
@@ -203,8 +209,18 @@ async def summarizer_node(state: ABOSState) -> Dict[str, Any]:
         f"status={final_status}, {n_completed}/{total} completed."
     )
 
+    # Translate summary and compliance flags back to the user's language if needed
+    detected_language = state.get("detected_language") or "en"
+    localised = await translate_output(
+        summary=summary,
+        compliance_flags=compliance_flags,
+        detected_language=detected_language,
+    )
+
     return {
         "final_status": final_status,
-        "summary": summary,
+        "summary": summary,                                          # English (internal)
+        "localised_summary": localised["localised_summary"],        # User's language
+        "localised_compliance_flags": localised["localised_compliance_flags"],
         "logs": [f"Summarizer: workflow {final_status}. {n_completed}/{total} steps completed."],
     }
