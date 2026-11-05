@@ -15,6 +15,11 @@ class GoalService:
         self.db = db
 
     async def create(self, user_id: str, payload: GoalCreateRequest) -> Goal:
+        # Merge preferred_language into context so the language node can pick it up
+        context = dict(payload.context or {})
+        if payload.preferred_language:
+            context["preferred_language"] = payload.preferred_language
+
         goal = Goal(
             user_id=user_id,
             title=payload.title,
@@ -22,7 +27,7 @@ class GoalService:
             priority=payload.priority.value,
             status=GoalStatus.PENDING.value,
             target_departments=payload.target_departments,
-            context=payload.context,
+            context=context if context else None,
         )
         self.db.add(goal)
         await self.db.flush()

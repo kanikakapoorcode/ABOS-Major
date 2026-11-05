@@ -43,6 +43,15 @@ class GoalCreateRequest(BaseModel):
         default=None,
         description="Optional structured context (e.g., customer ID, product line)",
     )
+    preferred_language: Optional[str] = Field(
+        default=None,
+        description=(
+            "BCP-47 language tag for the user's preferred language "
+            "(e.g. 'hi' for Hindi, 'mr' for Marathi, 'ta' for Tamil, 'en' for English). "
+            "If omitted, ABOS auto-detects the language from the goal text. "
+            "All outputs will be returned in this language."
+        ),
+    )
 
 
 class GoalResponse(BaseModel):
@@ -54,6 +63,7 @@ class GoalResponse(BaseModel):
     status: GoalStatus
     target_departments: Optional[List[str]]
     context: Optional[dict]
+    preferred_language: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
