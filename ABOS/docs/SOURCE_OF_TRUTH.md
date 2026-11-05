@@ -54,27 +54,34 @@ A system that takes a **high-level business goal** as input and:
 ### Component Map
 
 ```
-User Goal (natural language)
+User Goal (natural language,any language)
         │
         ▼
   FastAPI  ──► Celery Task Queue (Redis)
                         │
                         ▼
               LangGraph Graph
-              ┌─────────────────────────────────────┐
-              │                                     │
-              │  memory_retrieval                   │
-              │       ↓                             │
-              │   planner          [Contribution 1] │
-              │       ↓                             │
-              │  scheduler         [Contribution 2] │
-              │       ↓                             │
-              │  executor ──► department agent      │
-              │       ↓ fail                        │
-              │   recovery  (adopted, cited)        │
-              │       ↓                             │
-              │  summarizer                         │
-              └─────────────────────────────────────┘
+              ┌──────────────────────────────────────────┐
+              │                                          │
+              │  language          [multilingual input]  │
+              │       ↓                                  │
+              │  memory_retrieval                        │
+              │       ↓                                  │
+              │   planner          [Contribution 1]      │
+              │       ↓                                  │
+              │  compliance_plan   [safety gate]         │
+              │       ↓ approved / ──blocked──► END      │
+              │  scheduler         [Contribution 2]      │
+              │       ↓                                  │
+              │  executor ──► department agent           │
+              │       ↓ success                          │
+              │  compliance_output [per-step safety]     │
+              │       ↓ safe / ──blocked──► recovery     │
+              │       ↓ fail                             │
+              │   recovery  (adopted, cited)             │
+              │       ↓                                  │
+              │  summarizer  [localises output]          │
+              └──────────────────────────────────────────┘
                         │
                         ▼
               PostgreSQL + pgvector
@@ -85,14 +92,21 @@ User Goal (natural language)
 ```
 1. POST /api/v1/goals/          → goal created, status=pending
 2. Celery: execute_goal_task    → status=planning
-3. memory_retrieval node        → embed goal, fetch top-5 similar feedback
-4. planner node                 → LLM decomposes goal into WorkflowStepState list
-5. scheduler node               → score agents per step, assign best
-6. executor node (loop)         → run each step via department agent
-7. recovery node (on failure)   → classify → retry/reroute/skip
-8. summarizer node              → LLM summary of run
-9. DB write                     → workflow status, step outcomes, execution records
-10. feedback (async)            → user corrects routing → profile update → embedding store
+3. language node                → detect input language; translate title+description to English if needed
+4. memory_retrieval node        → embed goal, fetch top-5 similar feedback
+5. planner node                 → LLM decomposes goal into WorkflowStepState list
+6. compliance_plan node         → LLM reviews full plan for regulatory/legal risk before execution
+                                   high/critical risk → plan blocked, final_status=compliance_blocked
+                                   low/medium risk    → advisory flags stored, execution proceeds
+7. scheduler node               → score agents per step, assign best
+8. executor node (loop)         → run each step via department agent
+9. compliance_output node       → LLM reviews each step output before passing forward
+                                   unsafe output → step marked compliance_failed, sent to recovery
+10. recovery node (on failure)  → classify → retry/reroute/skip
+                                   compliance_failed → always skip (never retry)
+11. summarizer node             → LLM summary of run; translate summary+flags to user's language
+12. DB write                     → workflow status, step outcomes, execution records
+13. feedback (async)            → user corrects routing → profile update → embedding store
 ```
 
 ---
@@ -135,7 +149,7 @@ User Goal (natural language)
 | `assigned_agent` | str | scheduler | sales_agent / support_agent / research_agent |
 | `input_data` | dict | planner | Parameters for the agent |
 | `output_data` | dict | executor | Agent's output |
-| `status` | str | executor / recovery | pending / running / completed / failed / retrying / skipped |
+| `status` | str | executor / recovery | pending / running / completed / failed / retrying / skipped / compliance_failed |
 | `retry_count` | int | recovery | Incremented on each retry |
 | `latency_ms` | float | executor | Measured wall time |
 | `scheduler_score` | float | scheduler | Composite score used for routing |
@@ -228,7 +242,8 @@ To maximize routing precision without fragmenting empirical data, the scheduler 
 #### Canonical Task Taxonomy (Code-Enforced, Closed Set)
 - **Sales**: `lead_search`, `outreach_drafting`, `crm_update`, `pipeline_analysis`, `deal_qualification`
 - **Support**: `ticket_triage`, `response_drafting`, `ticket_escalation`, `sentiment_analysis`, `csat_analysis`
-- **Research**: `data_query`, `trend_analysis`, `report_generation`, `segment_comparison`, `churn_detection`
+- **Research**: `data_query`, `trend_analysis`, `report_generation`, `segment_comparison`, `churn_detection`, `quick_commerce_analysis`
+
 
 Unrecognized or free-text task strings are strictly treated as `None` (no guessing or fuzzing), falling back safely to Tier-2 aggregate profiles.
 
@@ -513,6 +528,7 @@ executing       → executor running
 completed       → all steps completed
 failed          → all steps failed or planner failed
 cancelled       → manually cancelled
+compliance_blocked → plan was reviewed and blocked before execution started
 ```
 
 ---
