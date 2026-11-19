@@ -4,7 +4,7 @@
 > If code contradicts this document, the code is wrong.
 > If you want to change something here, discuss with the team first, then update this file, then update the code.
 >
-> Last updated: August 16, 2026 — Kanika Kapoor
+> Last updated: August 29, 2026 — Kanika Kapoor (added language, compliance, quick-commerce features; §3 state contract updated)
 
 ---
 
@@ -121,11 +121,14 @@ User Goal (natural language,any language)
 | `goal_id` | str | input | Immutable |
 | `workflow_id` | str | input | Immutable |
 | `user_id` | str | input | Immutable |
-| `goal_title` | str | input | Immutable |
-| `goal_description` | str | input | Immutable |
+| `goal_title` | str | input | May be overwritten by language_node with English translation |
+| `goal_description` | str | input | May be overwritten by language_node with English translation |
 | `goal_priority` | str | input | Immutable |
 | `goal_context` | dict | input | Immutable |
 | `target_departments` | list | input | Hint only, planner may override |
+| `detected_language` | str | language_node | BCP-47 tag of user's input language (e.g. "hi", "mr", "en") |
+| `original_goal_title` | str | language_node | Unmodified user-submitted title, preserved for audit and output localisation |
+| `original_goal_description` | str | language_node | Unmodified user-submitted description, preserved for audit and output localisation |
 | `workflow_plan` | List[WorkflowStepState] | planner → scheduler → executor | Each node may update steps in-place |
 | `current_step_index` | int | executor / recovery | Incremented on success or skip |
 | `completed_steps` | List[WorkflowStepState] | executor (operator.add) | Append-only |
@@ -133,8 +136,12 @@ User Goal (natural language,any language)
 | `retrieved_memory` | list | memory_retrieval | Read by planner only |
 | `recovery_attempts` | int | recovery | Reset to 0 when a new step starts |
 | `max_recovery_attempts` | int | input | Default: 3 |
-| `final_status` | str | summarizer | completed / failed / partially_completed |
-| `summary` | str | summarizer | LLM-generated run summary |
+| `compliance_plan_result` | dict | compliance_plan_node | Full LLM compliance review of the workflow plan |
+| `compliance_flags` | List[str] | compliance_plan_node / compliance_output_node (operator.add) | Accumulated flags from plan-level and per-step output checks |
+| `final_status` | str | summarizer | completed / failed / partially_completed / compliance_blocked |
+| `summary` | str | summarizer | LLM-generated run summary in English |
+| `localised_summary` | str | summarizer | Summary translated to user's detected language (same as summary if English) |
+| `localised_compliance_flags` | List[str] | summarizer (operator.add) | Compliance flags translated to user's detected language |
 | `error` | str | planner / executor | First fatal error message |
 | `logs` | List[str] | all (operator.add) | Append-only audit trail |
 
@@ -147,6 +154,7 @@ User Goal (natural language,any language)
 | `description` | str | planner | Max 1000 chars |
 | `assigned_department` | str | planner | sales / support / research |
 | `assigned_agent` | str | scheduler | sales_agent / support_agent / research_agent |
+| `task_type` | str | planner | Canonical task type from closed taxonomy (e.g. lead_search, ticket_triage, quick_commerce_analysis) |
 | `input_data` | dict | planner | Parameters for the agent |
 | `output_data` | dict | executor | Agent's output |
 | `status` | str | executor / recovery | pending / running / completed / failed / retrying / skipped / compliance_failed |
