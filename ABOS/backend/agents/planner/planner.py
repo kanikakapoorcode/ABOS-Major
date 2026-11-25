@@ -145,12 +145,12 @@ def _parse_plan(raw: str) -> List[WorkflowStepState]:
 
 
 @retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=10),
+    stop=stop_after_attempt(4),
+    wait=wait_exponential(multiplier=2, min=5, max=30),
     reraise=True,
 )
 async def _call_planner_llm(system_prompt: str, user_prompt: str) -> str:
-    """Call the LLM via LiteLLM with retry on transient errors."""
+    """Call the LLM via LiteLLM with retry on transient errors (including 503)."""
     response = await acompletion(
         model=settings.ACTIVE_LLM,
         messages=[
@@ -171,8 +171,25 @@ async def planner_node(state: ABOSState) -> Dict[str, Any]:
     Reads: goal_description, goal_title, goal_priority, goal_context,
            target_departments, retrieved_memory
     Writes: workflow_plan, logs
+
+    If state contains a pre-built workflow_plan (plan_override from evaluation
+    runner), returns it immediately without calling the LLM. This guarantees
+    ABOS and baseline are compared on the identical plan in paired trials.
     """
     logger.info(f"[Planner] Starting for goal_id={state['goal_id']}")
+
+    # Plan override — used by evaluation runner to share a single plan
+    # between ABOS and baseline, eliminating planner variance as a confound.
+    if state.get("workflow_plan"):
+        logger.info(
+            f"[Planner] Using pre-built plan ({len(state['workflow_plan'])} steps) "
+            f"for goal_id={state['goal_id']}"
+        )
+        return {
+            "workflow_plan": state["workflow_plan"],
+            "current_step_index": 0,
+            "logs": [f"Planner: using pre-built plan ({len(state['workflow_plan'])} steps)."],
+        }
 
     system_prompt = _build_system_prompt(state)
     user_prompt = _build_user_prompt(state)
