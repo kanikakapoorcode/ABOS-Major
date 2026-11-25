@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from backend.core.config import settings
+from backend.core.exceptions import register_exception_handlers
 from backend.core.logging import setup_logging
 from backend.db.session import init_db
 from backend.api.v1.router import api_router
@@ -48,8 +49,15 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+    # --- Exception handlers ---
+    register_exception_handlers(app)
+
     # --- Routers ---
     app.include_router(api_router, prefix="/api/v1")
+
+    @app.get("/health", tags=["Health"])
+    async def health_check():
+        return {"status": "ok", "version": "0.1.0"}
 
     return app
 

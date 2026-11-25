@@ -22,3 +22,21 @@ class AgentProfileResponse(BaseModel):
 
 class AgentProfileListResponse(BaseModel):
     agents: List[AgentProfileResponse]
+
+
+class AgentTaskProfileResponse(BaseModel):
+    agent_name: str
+    department: str
+    task_type: str
+    success_rate: float
+    avg_latency_ms: float
+    confidence_score: float
+    total_executions: int
+    window_size: int
+    last_updated: Optional[datetime]
+
+    model_config = {"from_attributes": True}
+
+
+class AgentTaskProfileListResponse(BaseModel):
+    task_profiles: List[AgentTaskProfileResponse]

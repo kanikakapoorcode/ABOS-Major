@@ -1,3 +1,7 @@
+from datetime import datetime
+from typing import Optional
+from uuid import UUID
+
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -16,7 +20,18 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
+class UserResponse(BaseModel):
+    id: UUID
+    email: EmailStr
+    full_name: str
+    is_active: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    user: Optional[UserResponse] = None

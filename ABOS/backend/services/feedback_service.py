@@ -27,9 +27,14 @@ class FeedbackService:
         await self.db.flush()
         await self.db.refresh(feedback)
 
-        # Trigger async profile update via Celery
-        from backend.workers.tasks import update_agent_profile_task
+        # Trigger async profile update and embedding storage via Celery
+        from backend.workers.tasks import (
+            update_agent_profile_task,
+            store_feedback_embedding_task,
+        )
         update_agent_profile_task.delay(str(feedback.id))
+        if payload.correction and payload.correction.strip():
+            store_feedback_embedding_task.delay(str(feedback.id), payload.correction)
 
         return feedback
 

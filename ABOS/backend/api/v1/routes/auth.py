@@ -5,7 +5,7 @@ Auth routes — register, login, token refresh.
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.core.dependencies import get_db
+from backend.core.dependencies import get_db, get_current_user_id
 from backend.core.security import (
     create_access_token,
     create_refresh_token,
@@ -17,6 +17,7 @@ from backend.schemas.auth import (
     TokenResponse,
     UserLoginRequest,
     UserRegisterRequest,
+    UserResponse,
     RefreshTokenRequest,
 )
 from backend.services.user_service import UserService
@@ -40,6 +41,7 @@ async def register(payload: UserRegisterRequest, db: AsyncSession = Depends(get_
     return TokenResponse(
         access_token=create_access_token(str(user.id)),
         refresh_token=create_refresh_token(str(user.id)),
+        user=UserResponse.model_validate(user),
     )
 
 
@@ -54,7 +56,21 @@ async def login(payload: UserLoginRequest, db: AsyncSession = Depends(get_db)):
     return TokenResponse(
         access_token=create_access_token(str(user.id)),
         refresh_token=create_refresh_token(str(user.id)),
+        user=UserResponse.model_validate(user),
     )
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_me(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Return the currently authenticated user profile."""
+    service = UserService(db)
+    user = await service.get_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    return UserResponse.model_validate(user)
 
 
 @router.post("/refresh", response_model=TokenResponse)

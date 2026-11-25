@@ -33,14 +33,22 @@ class WorkflowService:
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
-    async def list_by_user(self, user_id: str, skip: int = 0, limit: int = 20) -> List[Workflow]:
-        result = await self.db.execute(
+    async def list_by_user(
+        self,
+        user_id: str,
+        goal_id: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> List[Workflow]:
+        query = (
             select(Workflow)
             .options(selectinload(Workflow.steps))
             .where(Workflow.user_id == user_id)
-            .order_by(Workflow.created_at.desc())
-            .offset(skip)
-            .limit(limit)
+        )
+        if goal_id is not None:
+            query = query.where(Workflow.goal_id == goal_id)
+        result = await self.db.execute(
+            query.order_by(Workflow.created_at.desc()).offset(skip).limit(limit)
         )
         return list(result.scalars().all())
 
