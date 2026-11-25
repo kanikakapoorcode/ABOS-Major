@@ -38,9 +38,12 @@ class ExecutionService:
         return execution
 
     async def get(self, execution_id: str, user_id: str) -> Optional[Execution]:
-        # Join through WorkflowStep -> Workflow to verify user ownership
+        from backend.db.models.workflow import WorkflowStep, Workflow
         result = await self.db.execute(
-            select(Execution).where(Execution.id == execution_id)
+            select(Execution)
+            .join(WorkflowStep, Execution.workflow_step_id == WorkflowStep.id)
+            .join(Workflow, WorkflowStep.workflow_id == Workflow.id)
+            .where(Execution.id == execution_id, Workflow.user_id == user_id)
         )
         return result.scalar_one_or_none()
 
@@ -51,17 +54,18 @@ class ExecutionService:
         skip: int = 0,
         limit: int = 50,
     ) -> List[Execution]:
-        query = select(Execution).order_by(Execution.created_at.desc()).offset(skip).limit(limit)
+        from backend.db.models.workflow import WorkflowStep, Workflow
+        query = (
+            select(Execution)
+            .join(WorkflowStep, Execution.workflow_step_id == WorkflowStep.id)
+            .join(Workflow, WorkflowStep.workflow_id == Workflow.id)
+            .where(Workflow.user_id == user_id)
+            .order_by(Execution.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
         if workflow_id:
-            from backend.db.models.workflow import WorkflowStep
-            query = (
-                select(Execution)
-                .join(WorkflowStep, Execution.workflow_step_id == WorkflowStep.id)
-                .where(WorkflowStep.workflow_id == workflow_id)
-                .order_by(Execution.created_at.desc())
-                .offset(skip)
-                .limit(limit)
-            )
+            query = query.where(WorkflowStep.workflow_id == workflow_id)
         result = await self.db.execute(query)
         return list(result.scalars().all())
 

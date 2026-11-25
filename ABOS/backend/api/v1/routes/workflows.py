@@ -2,6 +2,7 @@
 Workflows routes — retrieve generated workflows, steps, and execution state.
 """
 
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,12 +19,18 @@ router = APIRouter()
 async def list_workflows(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
+    goal_id: Optional[UUID] = None,
     skip: int = 0,
     limit: int = 20,
 ):
-    """List all generated workflows for the current user."""
+    """List all generated workflows for the current user, optionally filtered by goal_id."""
     service = WorkflowService(db)
-    workflows = await service.list_by_user(user_id=user_id, skip=skip, limit=limit)
+    workflows = await service.list_by_user(
+        user_id=user_id,
+        goal_id=str(goal_id) if goal_id else None,
+        skip=skip,
+        limit=limit,
+    )
     return WorkflowListResponse(workflows=workflows, total=len(workflows))
 
 

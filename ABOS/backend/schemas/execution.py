@@ -24,6 +24,7 @@ class ExecutionResponse(BaseModel):
     workflow_step_id: UUID
     agent_name: str
     department: str
+    task_type: Optional[str] = None
     status: ExecutionStatus
     input_data: Optional[Dict[str, Any]]
     output_data: Optional[Dict[str, Any]]
@@ -31,6 +32,7 @@ class ExecutionResponse(BaseModel):
     retry_count: int
     latency_ms: Optional[float]
     scheduler_score: Optional[float]   # score the scheduler used to route this task
+    token_cost: Optional[float] = None
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
     created_at: datetime

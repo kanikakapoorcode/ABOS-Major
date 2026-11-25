@@ -6,7 +6,7 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from backend.db.models.agent_profile import AgentProfile
+from backend.db.models.agent_profile import AgentProfile, AgentTaskProfile
 
 
 class AgentService:
@@ -17,6 +17,23 @@ class AgentService:
         result = await self.db.execute(
             select(AgentProfile).order_by(AgentProfile.department, AgentProfile.agent_name)
         )
+        return list(result.scalars().all())
+
+    async def list_task_profiles(
+        self,
+        department: Optional[str] = None,
+        task_type: Optional[str] = None,
+    ) -> List[AgentTaskProfile]:
+        query = select(AgentTaskProfile).order_by(
+            AgentTaskProfile.department,
+            AgentTaskProfile.task_type,
+            AgentTaskProfile.agent_name,
+        )
+        if department:
+            query = query.where(AgentTaskProfile.department == department)
+        if task_type:
+            query = query.where(AgentTaskProfile.task_type == task_type)
+        result = await self.db.execute(query)
         return list(result.scalars().all())
 
     async def get_profile(self, agent_name: str) -> Optional[AgentProfile]:
