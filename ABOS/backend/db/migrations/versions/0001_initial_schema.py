@@ -209,14 +209,15 @@ def upgrade() -> None:
     op.create_index("ix_agent_profiles_agent_name", "agent_profiles", ["agent_name"], unique=True)
     op.create_index("ix_agent_profiles_department", "agent_profiles", ["department"])
 
-    # Seed initial agent profiles with cold-start values
-    # (SOURCE_OF_TRUTH §4 — cold start: sr=1.0, lat=0.0, conf=1.0)
+    # Seed initial agent profiles with cold-start priors
+    # SOURCE_OF_TRUTH §4: sr=0.5 (neutral), lat=0.0→score=0.5 (neutral), conf=0.2 (low prior)
+    # composite = 0.50*0.5 + 0.20*0.5 + 0.30*0.2 = 0.41
     op.execute("""
         INSERT INTO agent_profiles (id, agent_name, department, success_rate, avg_latency_ms, confidence_score, total_executions, window_size)
         VALUES
-            (gen_random_uuid(), 'sales_agent',    'sales',    1.0, 0.0, 1.0, 0, 50),
-            (gen_random_uuid(), 'support_agent',  'support',  1.0, 0.0, 1.0, 0, 50),
-            (gen_random_uuid(), 'research_agent', 'research', 1.0, 0.0, 1.0, 0, 50)
+            (gen_random_uuid(), 'sales_agent',    'sales',    0.5, 0.0, 0.2, 0, 50),
+            (gen_random_uuid(), 'support_agent',  'support',  0.5, 0.0, 0.2, 0, 50),
+            (gen_random_uuid(), 'research_agent', 'research', 0.5, 0.0, 0.2, 0, 50)
     """)
 
     # ── feedback ──────────────────────────────────────────────────────────────

@@ -136,21 +136,24 @@ def update_confidence_score(
     execution_succeeded: bool,
     feedback_correct: Optional[bool],
     alpha: float = 0.1,
+    feedback_rating: Optional[str] = None,
 ) -> float:
     """
-    Exponential moving average update for confidence score.
+    Exponential moving average update for confidence score (SOURCE_OF_TRUTH §4).
 
-    Positive signal: execution succeeded AND (no feedback OR feedback correct)
-    Negative signal: execution failed OR feedback marked incorrect
+    Signals:
+      - 1.0 if execution succeeded AND (no feedback OR feedback == "correct")
+      - 0.0 if execution failed OR feedback == "incorrect"
+      - 0.5 if execution succeeded AND feedback == "partial"
 
     alpha: learning rate (0.1 = slow adaptation, 0.3 = fast)
     """
-    if execution_succeeded and feedback_correct is not False:
-        signal = 1.0
-    elif not execution_succeeded or feedback_correct is False:
+    if not execution_succeeded or feedback_correct is False or feedback_rating == "incorrect":
         signal = 0.0
+    elif feedback_rating == "partial":
+        signal = 0.5
     else:
-        signal = 0.5  # partial / uncertain
+        signal = 1.0
 
     new_confidence = (1 - alpha) * current_confidence + alpha * signal
     return round(max(0.0, min(1.0, new_confidence)), 4)
