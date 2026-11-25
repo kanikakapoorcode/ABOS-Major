@@ -88,14 +88,8 @@ to the execution loop.
 
 ## 4. What Is Identical Between ABOS and Baseline
 
-### 4.1 The Planner
-Exactly the same `planner_node` is called with exactly the same goal
-description and priority. The only difference: no memory context is
-injected (Section 3.1).
-
-This means both ABOS and the baseline start from the same workflow plan
-structure — the routing policy is the only variable affecting step
-assignment.
+### 4.1 The Planner (Shared Frozen Plan)
+`evaluation/run_evaluation.py` runs `memory_retrieval_node` + `planner_node` once per trial to produce a single `shared_plan`, then injects that frozen `workflow_plan` into both ABOS and Baseline initial states. Because `planner_node` early-returns when `state["workflow_plan"]` is already populated, both ABOS and the baseline execute on the **exact same workflow plan** — eliminating planner variance and memory-in-planning confounds so the routing policy is the sole independent variable during paired evaluation. (When `run_baseline()` is invoked standalone, `noop_memory_node` passes `retrieved_memory=[]` to `planner_node`.)
 
 ### 4.2 Tool Implementations and MockSimulator
 Both systems use the exact same `MockSimulator` instance with the
@@ -130,19 +124,22 @@ Same value: `max_recovery_attempts = 3` (from `config.py`).
 
 ## 5. Baseline Graph Structure
 
-The baseline uses a modified LangGraph graph where:
+The baseline uses a modified LangGraph graph mirroring `backend/agents/graph.py` where:
 
 - `memory_retrieval` → replaced with `noop_memory_node`
 - `scheduler` → replaced with `baseline_scheduler_node`
-- All other nodes → identical to ABOS
+- All other nodes (`language`, `planner`, `compliance_plan`, `executor`, `compliance_output`, `recovery`, `summarizer`) → identical to ABOS
 
 ```
 START
+  → language             (identical detection/translation)
   → noop_memory          (returns retrieved_memory=[])
-  → planner              (identical LLM decomposition)
+  → planner              (identical decomposition / passes through shared_plan)
+  → compliance_plan      (identical plan safety gate)
   → baseline_scheduler   (fixed dept → agent mapping, no scoring)
   → executor             (identical)
-  → recovery             (identical, but reroute always degrades to skip)
+  → compliance_output    (identical per-step safety gate)
+  → recovery             (identical, but reroute always degrades to skip if single candidate)
   → summarizer           (identical)
 END
 ```

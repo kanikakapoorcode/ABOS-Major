@@ -67,10 +67,16 @@ The LangGraph `StateGraph` defines the flow:
 START
   │
   ▼
+language                  ← detect input language; translate to English if needed
+  │
+  ▼
 memory_retrieval          ← fetch similar past feedback from pgvector
   │
   ▼
-planner                   ← LLM decomposes goal into workflow steps
+planner                   ← LLM decomposes goal into workflow steps (or passes through pre-built plan)
+  │
+  ▼
+compliance_plan           ← plan-level safety gate (blocks high/critical risk → END)
   │
   ▼
 scheduler                 ← score agents, assign each step to best agent
@@ -78,22 +84,22 @@ scheduler                 ← score agents, assign each step to best agent
   ▼
 executor                  ← run current step via assigned department agent
   │
-  ├── success ────────────► increment step → back to executor (next step)
-  │                                       → summarizer (if last step)
+  ├── success ────────────► compliance_output ──► next step (executor) or summarizer
   │
   └── failure ────────────► recovery
                               │
-                              ├── recovered ──► executor (retry)
-                              └── max retries ► mark failed → next step
+                              ├── recovered ──► executor (retry/reroute)
+                              └── max retries ► mark failed → next step or summarizer
   │
   ▼
-summarizer                ← LLM generates a summary of the completed run
+summarizer                ← LLM generates summary; localises back to user's language
   │
   ▼
 END
 ```
 
 Edges use conditional routing — `should_continue()` checks `current_step_index` vs `len(workflow_plan)`.
+The executor handles a failure on the current step before routing based on the prior step's status, so a later-step failure reaches recovery. If output compliance blocks a step, the workflow stops before executing subsequent steps; the blocked step is recorded as failed in the final summary and evaluation.
 
 ---
 
@@ -146,15 +152,15 @@ score = (
 ```
 
 Where:
-- `success_rate` — fraction of successful executions in the last N (window_size) runs
-- `latency_score` — normalized inverse latency: `1 / (1 + avg_latency_ms / 1000)`
-- `confidence_score` — composite score persisted in `agent_profiles` table, updated after each feedback
+- `success_rate` — fraction of successful executions in the last N (window_size = 50) runs
+- `latency_score` — normalized inverse latency: `1 / (1 + avg_latency_ms / 3000)` (`0.5` neutral fallback when unexecuted or missing)
+- `confidence_score` — composite score persisted in `agent_profiles` / `agent_task_profiles` tables, updated after each execution and feedback
 
-Default weights (adjustable in `config.py`):
+Locked weights (defined in `backend/agents/scheduler/scoring.py`):
 ```
-WEIGHT_SUCCESS_RATE = 0.5
-WEIGHT_LATENCY      = 0.2
-WEIGHT_CONFIDENCE   = 0.3
+WEIGHT_SUCCESS_RATE = 0.50
+WEIGHT_LATENCY      = 0.20
+WEIGHT_CONFIDENCE   = 0.30
 ```
 
 ### Why not RL?
@@ -190,6 +196,9 @@ class BaseDepartmentAgent:
         ...
 ```
 
+The base implementation exposes only the agent's registered tools to LiteLLM.
+Tool calls are validated and executed sequentially, with a maximum of three tool-call rounds. An unregistered tool, invalid arguments, or an exhausted limit fails the step and leaves recovery to the graph. The current department tools are simulator-backed; do not add live write operations without an explicit user-approval gate.
+
 ### Sales Agent (`sales.py`)
 
 Handles: lead generation, CRM updates, outreach campaigns, pipeline tracking.
@@ -199,26 +208,30 @@ Tools:
 - `draft_outreach` — LLM-drafted personalized outreach message
 - `update_crm` — write outcome back to CRM record
 - `analyze_pipeline` — summarize pipeline health
+- `qualify_deal` — score and qualify a deal using BANT criteria
 
 ### Support Agent (`support.py`)
 
-Handles: ticket triage, response drafting, escalation, satisfaction analysis.
+Handles: ticket triage, response drafting, escalation, sentiment analysis, satisfaction analysis.
 
 Tools:
 - `triage_ticket` — classify ticket type and priority
 - `draft_response` — LLM-drafted customer response
 - `escalate` — flag for human review
 - `analyze_sentiment` — sentiment analysis on customer messages
+- `get_csat_summary` — summarize CSAT scores and low-rated complaint themes
 
 ### Research Agent (`research.py`)
 
-Handles: data queries, trend analysis, report generation, market research.
+Handles: data queries, trend analysis, report generation, segment comparison, churn detection, quick-commerce trend analysis.
 
 Tools:
 - `query_data` — structured data query
 - `analyze_trends` — identify trends in provided data
 - `generate_report` — LLM-generated summary report
 - `compare_segments` — compare two customer/product segments
+- `detect_churn_signals` — identify behavioural churn risk signals
+- `quick_commerce_trend` — mine Blinkit/Zepto/Swiggy Instamart category & brand trends
 
 ### Adding a new tool to an agent
 

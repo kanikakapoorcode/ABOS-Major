@@ -4,7 +4,7 @@
 > If code contradicts this document, the code is wrong.
 > If you want to change something here, discuss with the team first, then update this file, then update the code.
 >
-> Last updated: August 29, 2026 — Kanika Kapoor (added language, compliance, quick-commerce features; §3 state contract updated)
+> Last updated: November 25, 2026 (synced shared-plan eval controls, quick-commerce tool spec, workflow multilingual persistence, API contract, and build status)
 
 ---
 
@@ -39,6 +39,37 @@ A system that takes a **high-level business goal** as input and:
 |---|---|---|
 | 1 | Goal-to-Workflow Planner | No prior system takes a business goal (not a prompt) and generates a structured multi-department execution plan |
 | 2 | Interpretable Performance-Based Scheduler | No lightweight non-RL alternative exists for business-department agent routing |
+
+### First Case Study: Sheetal's Cosmetics Business (Pre-launch)
+
+The primary case is a prospective owner deciding how to enter a local market with many similar cosmetics shops. A post-launch stock/replenishment review is a later use case, not the primary case for this research question.
+
+- Input: a Hindi or English spoken goal, location or PIN code, service radius, startup budget, and intended customer segment. ABOS asks for missing essentials one at a time.
+- Evidence: competitor locations and observed product/price ranges; local customer needs or survey results; online demand/availability signals; and supplier prices, minimum order quantities, and authenticity information. Each observation must retain its source and date.
+- Workflow: validate evidence coverage, map competitors, compare local assortment with customer and online signals, identify possible gaps, check supplier and margin feasibility, then present a budget-aware starter assortment and differentiation plan for Sheetal's review.
+- Safety and data rules: never claim a product is absent based only on a shop listing; distinguish missing evidence from evidence of absence; do not treat search popularity alone as purchase demand; disclose unavailable cost/supplier information; never place orders.
+- Voice is the accessibility channel, not a novelty claim by itself. Any claim that this differentiates ABOS from existing products requires a separate literature and product comparison.
+
+#### Voice Implementation Requirements
+
+The voice interaction path is not yet implemented. Build it as a thin frontend-to-backend vertical slice rather than completing either side in isolation:
+
+1. Define the interaction and API contract: audio input returns a transcript and recognized language; expose provider confidence only when available, and do not treat it as calibrated certainty.
+2. Build the minimum UI: microphone start/stop, recording playback, editable transcript, clear permission/transcription errors, and typed-input fallback.
+3. Add a backend speech-to-text adapter. Select a provider only after testing Hindi, English, code-switching, relevant names, accents, and noisy recordings.
+4. Track each critical extracted detail (such as goal, location, and budget) as unconfirmed, user-corrected, or confirmed. Ask one clarification at a time; do not pass an unconfirmed critical detail to the planner.
+5. Apply corrections within the current conversation. Persist personal vocabulary or speech preferences only with explicit consent and provide a way to delete them. Do not infer or persist an accent profile automatically.
+6. Before calling the voice experience accessible for low-literacy users, add speech output for readbacks and answers, with replay and a language/speed choice.
+7. Keep recordings ephemeral by default. Any retention for debugging or improvement requires explicit consent and a defined retention/deletion policy.
+
+The first experimental milestone is recording → transcription → user review/correction → confirmation of critical details. TTS, persistent personalization, and full business-workflow integration follow after this slice is tested end to end.
+
+Evaluate the two research contributions separately:
+
+1. **Planner:** compare the generated workflow with a reviewed, fixed reference plan using the same goal and evidence.
+2. **Scheduler:** give adaptive and fixed routing the same plan, evidence, agents, and memory condition; change only the routing policy.
+
+Measure workflow step adherence, supported versus unsupported claims, product-gap precision/recall against a manually reviewed local-market reference, feasibility under budget, and end-to-end latency. Measure voice usability separately. For the 9 synthetic paired scenarios, `evaluation/run_evaluation.py` now generates one shared frozen plan per trial, injects it into both ABOS and the baseline, and mirrors the `language`, `compliance_plan`, and `compliance_output` nodes in `evaluation/baseline.py` (with memory disabled in the baseline via `noop_memory_node`). However, until controlled real-market evidence collection, manual reference sets, and real tool execution replace `MockSimulator`, results are exploratory for the Sheetal local-market claims.
 
 ### What Is Adopted (cite, never claim)
 
@@ -75,10 +106,10 @@ User Goal (natural language,any language)
               │       ↓                                  │
               │  executor ──► department agent           │
               │       ↓ success                          │
-              │  compliance_output [per-step safety]     │
-              │       ↓ safe / ──blocked──► recovery     │
-              │       ↓ fail                             │
-              │   recovery  (adopted, cited)             │
+              │ compliance_output [per-step safety]     │
+              │       ↓ safe → next / summary           │
+              │       ↓ blocked → summary               │
+              │ executor failure → recovery (adopted)   │
               │       ↓                                  │
               │  summarizer  [localises output]          │
               └──────────────────────────────────────────┘
@@ -101,11 +132,11 @@ User Goal (natural language,any language)
 7. scheduler node               → score agents per step, assign best
 8. executor node (loop)         → run each step via department agent
 9. compliance_output node       → LLM reviews each step output before passing forward
-                                   unsafe output → step marked compliance_failed, sent to recovery
+                                   unsafe output → step marked compliance_failed; later steps do not run
 10. recovery node (on failure)  → classify → retry/reroute/skip
-                                   compliance_failed → always skip (never retry)
+                                   executor failures → recovery for the current step
 11. summarizer node             → LLM summary of run; translate summary+flags to user's language
-12. DB write                     → workflow status, step outcomes, execution records
+12. DB write                     → workflow status, summary, localised_summary, detected_language, compliance_flags, localised_compliance_flags, step outcomes, execution records
 13. feedback (async)            → user corrects routing → profile update → embedding store
 ```
 
@@ -314,6 +345,7 @@ Each tool call goes through a `MockSimulator` that:
 | `generate_report` | 0.15 | 2000 | 400 | 0.25 |
 | `compare_segments` | 0.22 | 2500 | 500 | 0.20 |
 | `detect_churn_signals` | 0.25 | 2800 | 600 | 0.30 |
+| `quick_commerce_trend` | 0.20 | 2400 | 500 | 0.15 |
 
 ### Seed Control
 
@@ -485,15 +517,23 @@ Does NOT handle: lead generation, revenue analysis, market research.
 
 ### Research Agent (`research_agent`)
 
-Handles: data queries, trend analysis, report generation, segment comparison, churn detection.
+Handles: data queries, trend analysis, report generation, segment comparison, churn detection, quick-commerce trend analysis.
 Does NOT handle: CRM writes, customer responses, outreach drafting.
 
 ---
 
 ## 9. API Contract
 
-Base URL: `/api/v1`
-Auth: Bearer JWT on all endpoints except `/auth/register` and `/auth/login`
+Base URL: `/api/v1` (plus `GET /health` at root)
+Auth: Bearer JWT on all endpoints except `/auth/register`, `/auth/login`, `/auth/refresh`, and `/health`
+
+### Additional Core Endpoints
+
+- `GET /auth/me` → current authenticated `UserResponse` (`id`, `email`, `full_name`, `is_active`, `created_at`); `/auth/login` and `/auth/register` also return `user` inside `TokenResponse`
+- `GET /workflows/?goal_id={uuid}` → filter user workflows by goal; `WorkflowResponse` includes `detected_language`, `summary`, `localised_summary`, `compliance_flags`, `localised_compliance_flags`, and `error`
+- `POST /workflows/{workflow_id}/retry` → queues `execute_workflow_task` to re-run the workflow
+- `GET /agents/` → Tier-2 aggregate `AgentProfile` list
+- `GET /agents/task-profiles` → Tier-1 `AgentTaskProfile` list (optional `department`, `task_type` filters)
 
 ### Goal Submission (primary write path)
 
@@ -612,18 +652,18 @@ This data is collected for future analysis and paper limitations section.
 
 | Step | Deliverable | Status |
 |---|---|---|
-| 1 | Docker (local + cloud) | 🔲 |
-| 2 | First Alembic migration | 🔲 |
-| 3 | Mock tools with controlled variance (this spec, Section 5) | 🔲 |
-| 4 | `scripts/run_agent_debug.py` | 🔲 |
+| 1 | Docker (local + cloud) | ✅ |
+| 2 | Alembic migrations (`0001`, `0002`, `0003`) | ✅ |
+| 3 | Mock tools with controlled variance (this spec, Section 5) | ✅ |
+| 4 | `scripts/run_agent_debug.py` | ✅ |
 
 ### Phase 2 — Evaluable
 
 | Step | Deliverable | Status |
 |---|---|---|
-| 5 | Baseline implementation (from Section 7 spec) | 🔲 |
-| 6 | Evaluation runner — N-trial design (Section 6) | 🔲 |
-| 7 | Unit tests — scheduler, planner, classifier | 🔲 |
+| 5 | Baseline implementation (from Section 7 spec) | ✅ |
+| 6 | Evaluation runner — N-trial design (Section 6) | ✅ |
+| 7 | Unit tests — scheduler, planner, classifier, metrics | ✅ |
 | 8 | MLflow integration in eval runner | 🔲 |
 
 ### Phase 3 — Demonstrable

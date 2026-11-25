@@ -332,9 +332,9 @@ The agent system lives in `backend/agents/`. This is the core research contribut
 3. Register it in the agent's tool list
 4. No changes needed to the graph — the planner will use it automatically
 
-### Changing the scheduler weights
+### Scheduler weights
 
-Open `backend/agents/scheduler/scheduler.py` and adjust `WEIGHT_SUCCESS_RATE`, `WEIGHT_LATENCY`, `WEIGHT_CONFIDENCE`.
+The locked heuristic weights (`0.50` success rate, `0.20` latency, `0.30` confidence) are defined in `backend/agents/scheduler/scoring.py`.
 
 ---
 
@@ -373,15 +373,20 @@ Key endpoints:
 
 | Method | Path | Description |
 |---|---|---|
+| GET | `/health` | Service health check |
 | POST | `/api/v1/auth/register` | Register a new user |
-| POST | `/api/v1/auth/login` | Login and get tokens |
+| POST | `/api/v1/auth/login` | Login and get tokens + user |
+| GET | `/api/v1/auth/me` | Get authenticated user profile |
 | POST | `/api/v1/goals/` | Submit a business goal |
 | GET | `/api/v1/goals/` | List your goals |
-| GET | `/api/v1/workflows/{id}` | Get a generated workflow |
+| GET | `/api/v1/workflows/?goal_id=...` | List workflows (optionally filter by goal) |
+| GET | `/api/v1/workflows/{id}` | Get workflow, steps, and localised summary |
+| POST | `/api/v1/workflows/{id}/retry` | Retry a failed or incomplete workflow |
 | GET | `/api/v1/executions/` | List agent executions |
 | POST | `/api/v1/feedback/` | Submit feedback (memory layer) |
 | GET | `/api/v1/metrics/system` | System-level performance metrics |
-| GET | `/api/v1/agents/` | Agent performance profiles |
+| GET | `/api/v1/agents/` | Tier-2 aggregate agent profiles |
+| GET | `/api/v1/agents/task-profiles` | Tier-1 task-specific agent profiles |
 
 ---
 
