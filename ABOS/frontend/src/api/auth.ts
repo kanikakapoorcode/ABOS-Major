@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { AuthResponse, RefreshResponse } from './types';
 
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
 export interface LoginCredentials {
   email: string;
@@ -15,19 +16,10 @@ export interface RegisterData {
 }
 
 /**
- * Login with email and password
+ * Login with email and password (JSON payload matching backend UserLoginRequest)
  */
 export const login = async (credentials: LoginCredentials): Promise<AuthResponse> => {
-  const formData = new URLSearchParams();
-  formData.append('username', credentials.email);
-  formData.append('password', credentials.password);
-
-  const response = await axios.post(`${API_BASE_URL}/auth/login`, formData, {
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-  });
-
+  const response = await axios.post(`${API_BASE_URL}/auth/login`, credentials);
   return response.data;
 };
 

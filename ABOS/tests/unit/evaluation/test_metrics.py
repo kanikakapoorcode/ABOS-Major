@@ -101,3 +101,30 @@ def test_compute_metrics_recovery_denominator():
     assert metrics.task_completion_rate == 0.5
     # Total failed attempts = 1 failed + 1 recovered = 2. Recovered = 1 -> RSR = 0.5
     assert metrics.recovery_success_rate == 0.5
+
+
+def test_compute_metrics_counts_compliance_block_as_failure():
+    blocked_step = {
+        "step_index": 0,
+        "assigned_department": "sales",
+        "task_type": "outreach_drafting",
+        "assigned_agent": "sales_outreach_fast",
+        "status": "compliance_failed",
+        "latency_ms": 600.0,
+        "retry_count": 0,
+    }
+    metrics = compute_metrics(
+        {
+            "workflow_plan": [blocked_step, {"step_index": 1, "status": "pending"}],
+            "completed_steps": [{**blocked_step, "status": "completed"}],
+            "failed_steps": [blocked_step],
+        },
+        scenario_id="C1",
+        system="abos",
+        trial_number=1,
+        seed=42,
+    )
+
+    assert metrics.task_completion_rate == 0.0
+    assert metrics.completed_steps == 0
+    assert metrics.failed_steps == 1

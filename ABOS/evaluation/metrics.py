@@ -55,8 +55,20 @@ def compute_metrics(
     Compute all evaluation metrics from a completed graph result state.
     """
     plan: List[Dict] = result.get("workflow_plan") or []
-    completed: List[Dict] = result.get("completed_steps") or []
-    failed: List[Dict] = result.get("failed_steps") or []
+    completed_steps: List[Dict] = result.get("completed_steps") or []
+    failed_steps: List[Dict] = result.get("failed_steps") or []
+
+    plan_by_index = {step.get("step_index"): step for step in plan}
+    completed = [
+        step
+        for step in completed_steps
+        if plan_by_index.get(step.get("step_index"), step).get("status") == "completed"
+    ]
+    failed_by_index = {step.get("step_index"): step for step in failed_steps}
+    for step in plan:
+        if step.get("status") in ("failed", "compliance_failed"):
+            failed_by_index.setdefault(step.get("step_index"), step)
+    failed = list(failed_by_index.values())
 
     total = len(plan)
     n_completed = len(completed)

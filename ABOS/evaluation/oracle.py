@@ -84,6 +84,10 @@ SIMULATOR_TASK_UTILITIES: Dict[Tuple[str, str], Dict[str, Tuple[float, float, fl
         "research_kpi_quick": (0.0, 0.0, 0.0),             # Lacks detect_churn_signals
         "research_deep_analyst": (0.75, 2800.0, 0.70),     # Has detect_churn_signals
     },
+    ("research", "quick_commerce_analysis"): {
+        "research_kpi_quick": (0.80, 2400.0, 0.75),        # Has quick_commerce_trend (surface level)
+        "research_deep_analyst": (0.80, 2400.0, 0.85),     # Specialized for QC gap & retail positioning
+    },
 }
 
 

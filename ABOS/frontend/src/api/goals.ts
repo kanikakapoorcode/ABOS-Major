@@ -5,7 +5,7 @@ import { Goal, GoalCreateRequest } from './types';
  * Create a new goal
  */
 export const createGoal = async (data: GoalCreateRequest): Promise<Goal> => {
-  const response = await apiClient.post('/goals', data);
+  const response = await apiClient.post('/goals/', data);
   return response.data;
 };
 
@@ -13,8 +13,8 @@ export const createGoal = async (data: GoalCreateRequest): Promise<Goal> => {
  * Get all goals for the current user
  */
 export const getGoals = async (): Promise<Goal[]> => {
-  const response = await apiClient.get('/goals');
-  return response.data;
+  const response = await apiClient.get<{ goals: Goal[]; total: number }>('/goals/');
+  return response.data.goals;
 };
 
 /**

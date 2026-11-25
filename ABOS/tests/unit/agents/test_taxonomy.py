@@ -13,7 +13,7 @@ from backend.agents.tasks.taxonomy import (
 def test_taxonomy_constants():
     assert len(CANONICAL_TASK_TYPES["sales"]) == 5
     assert len(CANONICAL_TASK_TYPES["support"]) == 5
-    assert len(CANONICAL_TASK_TYPES["research"]) == 5
+    assert len(CANONICAL_TASK_TYPES["research"]) == 6
     assert MIN_TASK_EVIDENCE == 3
     assert MIN_AGGREGATE_EVIDENCE == 1
 
@@ -22,6 +22,7 @@ def test_validate_task_type_exact_matches():
     assert validate_task_type("sales", "lead_search") == "lead_search"
     assert validate_task_type("support", "ticket_triage") == "ticket_triage"
     assert validate_task_type("research", "churn_detection") == "churn_detection"
+    assert validate_task_type("research", "quick_commerce_analysis") == "quick_commerce_analysis"
 
 
 def test_validate_task_type_case_and_whitespace():

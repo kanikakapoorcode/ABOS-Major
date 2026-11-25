@@ -79,100 +79,90 @@ async def baseline_scheduler_node(state: ABOSState) -> Dict[str, Any]:
     }
 
 
-# ── Graph routing functions ───────────────────────────────────────────────────
-# Identical logic to graph.py — copied here to keep baseline self-contained.
-
-def _route_after_executor(
-    state: ABOSState,
-) -> Literal["executor", "summarizer", "recovery"]:
-    plan = state.get("workflow_plan") or []
-    step_idx = state.get("current_step_index", 0)
-
-    if step_idx >= len(plan):
-        return "summarizer"
-
-    status = plan[step_idx].get("status", "pending")
-    if status in ("failed", "retrying"):
-        return "recovery"
-
-    # More steps to execute
-    return "executor"
-
-
-def _route_after_recovery(
-    state: ABOSState,
-) -> Literal["executor", "summarizer"]:
-    plan = state.get("workflow_plan") or []
-    step_idx = state.get("current_step_index", 0)
-
-    if step_idx >= len(plan):
-        return "summarizer"
-
-    status = plan[step_idx].get("status", "pending")
-    if status == "retrying":
-        return "executor"
-
-    if step_idx < len(plan):
-        return "executor"
-
-    return "summarizer"
-
-
-def _route_after_planner(
-    state: ABOSState,
-) -> Literal["baseline_scheduler", "end"]:
-    if not state.get("workflow_plan"):
-        return "end"
-    return "baseline_scheduler"
-
-
 # ── Baseline graph builder ────────────────────────────────────────────────────
 
 def build_baseline_graph() -> StateGraph:
     """
     Build the baseline LangGraph graph.
 
-    Identical to ABOS graph except:
+    Identical to ABOS graph (`backend/agents/graph.py`) except:
       - memory_retrieval  → noop_memory_node
       - scheduler         → baseline_scheduler_node
 
-    All other nodes imported directly from the ABOS implementation.
+    All other nodes and routing functions (language, compliance_plan,
+    compliance_output, executor, recovery, summarizer) are imported directly
+    from the ABOS implementation so the routing policy is the sole difference.
     """
+    from backend.agents.language.language import language_node
     from backend.agents.planner.planner import planner_node
+    from backend.agents.compliance.compliance import (
+        compliance_plan_node,
+        compliance_output_node,
+    )
     from backend.agents.recovery.recovery import recovery_node
     from backend.agents.executor import executor_node, summarizer_node
+    from backend.agents.graph import (
+        route_after_planner,
+        route_after_compliance_plan,
+        route_after_executor,
+        route_after_compliance_output,
+        route_after_recovery,
+    )
 
     graph = StateGraph(ABOSState)
 
     # Nodes
+    graph.add_node("language",             language_node)            # identical
     graph.add_node("memory_retrieval",     noop_memory_node)         # disabled
-    graph.add_node("planner",              planner_node)              # identical
+    graph.add_node("planner",              planner_node)             # identical
+    graph.add_node("compliance_plan",      compliance_plan_node)     # identical
     graph.add_node("baseline_scheduler",   baseline_scheduler_node)  # fixed routing
-    graph.add_node("executor",             executor_node)             # identical
-    graph.add_node("recovery",             recovery_node)             # identical
-    graph.add_node("summarizer",           summarizer_node)           # identical
+    graph.add_node("executor",             executor_node)            # identical
+    graph.add_node("compliance_output",    compliance_output_node)   # identical
+    graph.add_node("recovery",             recovery_node)            # identical
+    graph.add_node("summarizer",           summarizer_node)          # identical
 
-    # Edges
-    graph.add_edge(START, "memory_retrieval")
+    # Edges — exact mirror of backend/agents/graph.py
+    graph.add_edge(START, "language")
+    graph.add_edge("language", "memory_retrieval")
     graph.add_edge("memory_retrieval", "planner")
 
     graph.add_conditional_edges(
         "planner",
-        _route_after_planner,
-        {"baseline_scheduler": "baseline_scheduler", "end": END},
+        route_after_planner,
+        {"compliance_plan": "compliance_plan", END: END},
+    )
+
+    graph.add_conditional_edges(
+        "compliance_plan",
+        route_after_compliance_plan,
+        {"scheduler": "baseline_scheduler", END: END},
     )
 
     graph.add_edge("baseline_scheduler", "executor")
 
     graph.add_conditional_edges(
         "executor",
-        _route_after_executor,
-        {"executor": "executor", "recovery": "recovery", "summarizer": "summarizer"},
+        route_after_executor,
+        {
+            "compliance_output": "compliance_output",
+            "recovery": "recovery",
+            "summarizer": "summarizer",
+        },
+    )
+
+    graph.add_conditional_edges(
+        "compliance_output",
+        route_after_compliance_output,
+        {
+            "executor": "executor",
+            "summarizer": "summarizer",
+        },
     )
 
     graph.add_conditional_edges(
         "recovery",
-        _route_after_recovery,
+        route_after_recovery,
         {"executor": "executor", "summarizer": "summarizer"},
     )
 
