@@ -428,3 +428,16 @@ async def test_temporal_boundary_no_future_leakage():
         # 3. Verify temporal integrity: the step's recorded scheduler_score remains frozen at time t
         assert assigned_step["scheduler_score"] == score_at_t
         assert assigned_step["assigned_agent"] == "sales_outreach_fast"
+
+
+def test_update_confidence_score_partial_feedback():
+    """Verify 'partial' feedback applies signal=0.5 per SOURCE_OF_TRUTH §4."""
+    # 0.9 * 0.60 + 0.1 * 0.50 = 0.54 + 0.05 = 0.59
+    updated = update_confidence_score(
+        current_confidence=0.60,
+        execution_succeeded=True,
+        feedback_correct=None,
+        alpha=0.1,
+        feedback_rating="partial",
+    )
+    assert updated == 0.59
