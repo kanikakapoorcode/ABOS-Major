@@ -41,6 +41,7 @@ from evaluation.metrics import compute_metrics, TrialMetrics, aggregate
 from evaluation.compare import compare_scenario_trials, ScenarioComparisonResult
 from backend.agents.department.mock_simulator import set_simulator, MockSimulator
 from backend.agents.graph import build_graph
+from backend.agents.memory.memory import memory_retrieval_node
 from evaluation.baseline import build_baseline_graph
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
@@ -104,8 +105,16 @@ async def run_single_trial(
     trial_number: int,
     seed: int,
     mode: str = "cold",
+    shared_plan: Optional[List[Dict[str, Any]]] = None,
 ) -> TrialMetrics:
-    """Run a single isolated trial for a given graph and seed."""
+    """
+    Run a single isolated trial for a given graph and seed.
+
+    If shared_plan is provided, it is injected into initial_state so the
+    planner node returns it immediately without calling the LLM. This
+    guarantees ABOS and baseline are routed on the identical workflow plan,
+    isolating the scheduler as the sole independent variable.
+    """
     set_simulator(MockSimulator(seed=seed))
 
     initial_state = {
@@ -117,7 +126,8 @@ async def run_single_trial(
         "goal_priority": scenario.get("priority", "medium"),
         "goal_context": {"system": system, "scenario_id": scenario_id, "seed": seed, "mode": mode},
         "target_departments": scenario.get("target_departments"),
-        "workflow_plan": None,
+        # Inject the shared plan — planner_node returns it immediately if set
+        "workflow_plan": shared_plan if shared_plan is not None else None,
         "current_step_index": 0,
         "completed_steps": [],
         "failed_steps": [],
@@ -173,18 +183,101 @@ async def run_scenario_experiment(
     mode: str = "cold",
     n_trials: int = 7,
 ) -> ScenarioComparisonResult:
-    """Run n paired trials for one scenario between ABOS and Baseline."""
+    """
+    Run n paired trials for one scenario between ABOS and Baseline.
+
+    For each trial:
+    1. Run the ABOS planner once to generate a workflow plan.
+    2. Inject that frozen plan into both ABOS and baseline initial states.
+    3. Both systems route and execute the identical plan.
+
+    This eliminates planner variance as a confound — the only difference
+    between ABOS and baseline is the routing policy (scheduler vs fixed).
+    """
+    from backend.agents.graph import build_graph as build_abos_graph_fn
+    from backend.agents.planner.planner import planner_node
+    from backend.agents.memory.memory import memory_retrieval_node
+
     scenario = SCENARIOS[scenario_id]
     seeds = TRIAL_SEEDS[:n_trials]
 
-    abos_graph = build_graph()
+    abos_graph = build_abos_graph_fn()
     baseline_graph = build_baseline_graph()
 
     abos_trials: List[TrialMetrics] = []
     baseline_trials: List[TrialMetrics] = []
 
     for i, seed in enumerate(seeds, 1):
-        # 1. Run ABOS trial
+        # ── Step 1: Generate shared plan via ABOS planner ────────────────────
+        # Run memory_retrieval + planner in isolation to get the plan.
+        # Same seed and mock DB context as the full trial.
+        set_simulator(MockSimulator(seed=seed))
+
+        plan_state = {
+            "goal_id": f"eval-plan-{scenario_id}-t{i}-s{seed}",
+            "workflow_id": f"eval-plan-wf-{scenario_id}-t{i}",
+            "user_id": "eval-runner",
+            "goal_title": scenario["title"],
+            "goal_description": scenario["description"],
+            "goal_priority": scenario.get("priority", "medium"),
+            "goal_context": {"system": "planner", "scenario_id": scenario_id, "seed": seed, "mode": mode},
+            "target_departments": scenario.get("target_departments"),
+            "workflow_plan": None,
+            "current_step_index": 0,
+            "completed_steps": [],
+            "failed_steps": [],
+            "retrieved_memory": [],
+            "recovery_attempts": 0,
+            "max_recovery_attempts": 3,
+            "final_status": None,
+            "summary": None,
+            "error": None,
+            "logs": [],
+            "detected_language": "en",
+            "original_goal_title": None,
+            "original_goal_description": None,
+            "localised_summary": None,
+            "localised_compliance_flags": [],
+            "compliance_plan_result": None,
+            "compliance_flags": [],
+        }
+
+        shared_plan: Optional[List[Dict[str, Any]]] = None
+        with patch("backend.db.session.AsyncSessionLocal") as mock_session_cls:
+            mock_session = AsyncMock()
+            mock_session_cls.return_value.__aenter__.return_value = mock_session
+
+            async def mock_execute_plan(stmt):
+                res = MagicMock()
+                res.scalars.return_value.all.return_value = []
+                return res
+
+            mock_session.execute = mock_execute_plan
+
+            try:
+                # memory_retrieval first (injects retrieved_memory into state)
+                mem_result = await memory_retrieval_node(plan_state)
+                plan_state = {**plan_state, **mem_result}
+
+                # planner generates the plan
+                plan_result = await planner_node(plan_state)
+                raw_plan = plan_result.get("workflow_plan")
+                # Use None (not []) on empty so planner_node's falsy guard works correctly
+                shared_plan = raw_plan if raw_plan else None
+                logger.info(
+                    f"[Eval] Scenario {scenario_id} trial {i}: "
+                    f"shared plan has {len(shared_plan) if shared_plan else 0} steps"
+                )
+            except Exception as e:
+                logger.error(
+                    f"[Eval] Planner failed for {scenario_id} trial {i}: {e}. "
+                    "Running both systems without a shared plan."
+                )
+                shared_plan = None
+
+        await asyncio.sleep(15)
+
+        # ── Step 2: Run ABOS with shared plan ────────────────────────────────
         abos_m = await run_single_trial(
             graph=abos_graph,
             scenario=scenario,
@@ -193,11 +286,12 @@ async def run_scenario_experiment(
             trial_number=i,
             seed=seed,
             mode=mode,
+            shared_plan=shared_plan,
         )
         abos_trials.append(abos_m)
         await asyncio.sleep(15)
 
-        # 2. Run Baseline trial with exact same seed
+        # ── Step 3: Run Baseline with same shared plan and same seed ─────────
         base_m = await run_single_trial(
             graph=baseline_graph,
             scenario=scenario,
@@ -206,6 +300,7 @@ async def run_scenario_experiment(
             trial_number=i,
             seed=seed,
             mode=mode,
+            shared_plan=shared_plan,
         )
         baseline_trials.append(base_m)
         await asyncio.sleep(15)
