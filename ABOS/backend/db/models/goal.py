@@ -26,3 +26,9 @@ class Goal(UUIDMixin, TimestampMixin, Base):
     workflows: Mapped[list["Workflow"]] = relationship(  # noqa: F821
         "Workflow", back_populates="goal", cascade="all, delete-orphan"
     )
+
+    @property
+    def preferred_language(self) -> Optional[str]:
+        if isinstance(self.context, dict):
+            return self.context.get("preferred_language")
+        return None

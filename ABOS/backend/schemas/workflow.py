@@ -25,6 +25,7 @@ class StepStatus(str, Enum):
     FAILED = "failed"
     SKIPPED = "skipped"
     RETRYING = "retrying"
+    COMPLIANCE_FAILED = "compliance_failed"
 
 
 class WorkflowStepSchema(BaseModel):
@@ -36,6 +37,7 @@ class WorkflowStepSchema(BaseModel):
     description: str
     assigned_department: str           # sales | support | research
     assigned_agent: str                # specific agent name
+    task_type: Optional[str] = None
     input_data: Optional[Dict[str, Any]]
     output_data: Optional[Dict[str, Any]]
     status: StepStatus
@@ -57,6 +59,12 @@ class WorkflowResponse(BaseModel):
     completed_steps: int
     failed_steps: int
     total_latency_ms: Optional[float]
+    detected_language: Optional[str] = None
+    summary: Optional[str] = None
+    localised_summary: Optional[str] = None
+    compliance_flags: Optional[List[str]] = None
+    localised_compliance_flags: Optional[List[str]] = None
+    error: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

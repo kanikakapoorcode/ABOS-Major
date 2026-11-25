@@ -75,13 +75,17 @@ def route_after_compliance_output(
 ) -> Literal["executor", "summarizer"]:
     """
     After the output compliance check:
+    - If the latest output was blocked → summarizer without running later steps
     - If more steps remain → executor
     - If all steps done → summarizer
-    The compliance_output_node may have flagged a step as compliance_failed,
-    which the executor will treat as a failed step on the next iteration.
     """
     plan = state.get("workflow_plan") or []
     step_idx = state.get("current_step_index", 0)
+
+    completed_idx = step_idx - 1
+    if 0 <= completed_idx < len(plan):
+        if plan[completed_idx].get("status") == "compliance_failed":
+            return "summarizer"
 
     if step_idx >= len(plan):
         return "summarizer"
@@ -98,34 +102,23 @@ def route_after_executor(
     - out of bounds → summarizer
     """
     plan = state.get("workflow_plan") or []
-    # current_step_index was incremented by executor on success,
-    # so check the step at index - 1 for the result.
     step_idx = state.get("current_step_index", 0)
-    completed_idx = step_idx - 1
 
-    # All steps processed
-    if completed_idx >= len(plan):
-        return "summarizer"
-
-    if completed_idx >= 0:
-        just_completed = plan[completed_idx]
-        status = just_completed.get("status", "pending")
-        if status == "completed":
-            return "compliance_output"
+    # A failure belongs to the current step; handle it before inspecting the
+    # previously completed step, otherwise later-step failures bypass recovery.
+    if 0 <= step_idx < len(plan):
+        status = plan[step_idx].get("status", "pending")
         if status in ("failed", "retrying", "compliance_failed"):
-            return "recovery"
-
-    # If step_idx itself is still in-bounds with a failure
-    if step_idx < len(plan):
-        current = plan[step_idx]
-        status = current.get("status", "pending")
-        if status in ("failed", "retrying"):
             return "recovery"
 
     if step_idx >= len(plan):
         return "summarizer"
 
-    return "compliance_output"
+    completed_idx = step_idx - 1
+    if completed_idx >= 0 and plan[completed_idx].get("status") == "completed":
+        return "compliance_output"
+
+    return "summarizer"
 
 
 def route_after_recovery(

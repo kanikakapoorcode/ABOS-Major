@@ -25,6 +25,7 @@ class GoalStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    COMPLIANCE_BLOCKED = "compliance_blocked"
 
 
 class GoalCreateRequest(BaseModel):

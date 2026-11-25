@@ -36,8 +36,8 @@ logger = logging.getLogger(__name__)
 # ── Shared LLM helper ─────────────────────────────────────────────────────────
 
 @retry(
-    stop=stop_after_attempt(2),
-    wait=wait_exponential(multiplier=1, min=2, max=8),
+    stop=stop_after_attempt(4),
+    wait=wait_exponential(multiplier=2, min=5, max=30),
     reraise=True,
 )
 async def _call_compliance_llm(system_prompt: str, user_prompt: str) -> str:
@@ -252,8 +252,7 @@ async def compliance_output_node(state: ABOSState) -> Dict[str, Any]:
     issues = result.get("issues", [])
     safe_to_proceed = result.get("safe_to_proceed", True)
 
-    # Append flags to existing compliance_flags list
-    existing_flags: List[str] = list(state.get("compliance_flags") or [])
+    # Collect only newly raised flags (ABOSState.compliance_flags uses operator.add)
     new_flags: List[str] = []
 
     if not output_approved or risk_level in ("high", "critical"):
@@ -284,7 +283,8 @@ async def compliance_output_node(state: ABOSState) -> Dict[str, Any]:
         )
         return {
             "workflow_plan": updated_plan,
-            "compliance_flags": existing_flags + new_flags,
+            "failed_steps": [updated_step],
+            "compliance_flags": new_flags,
             "logs": log_lines + [
                 f"Compliance output BLOCKED step {completed_idx}: {issue}"
                 for issue in issues
@@ -298,6 +298,6 @@ async def compliance_output_node(state: ABOSState) -> Dict[str, Any]:
         )
 
     return {
-        "compliance_flags": existing_flags + new_flags,
+        "compliance_flags": new_flags,
         "logs": log_lines,
     }

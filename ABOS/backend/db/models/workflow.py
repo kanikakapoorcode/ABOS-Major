@@ -23,6 +23,12 @@ class Workflow(UUIDMixin, TimestampMixin, Base):
     completed_steps: Mapped[int] = mapped_column(Integer, default=0)
     failed_steps: Mapped[int] = mapped_column(Integer, default=0)
     total_latency_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    detected_language: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    localised_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    compliance_flags: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    localised_compliance_flags: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     goal: Mapped["Goal"] = relationship("Goal", back_populates="workflows")  # noqa: F821
     steps: Mapped[list["WorkflowStep"]] = relationship(

@@ -151,11 +151,26 @@ async def summarizer_node(state: ABOSState) -> Dict[str, Any]:
     failed = state.get("failed_steps") or []
     plan = state.get("workflow_plan") or []
 
+    plan_by_index = {step.get("step_index"): step for step in plan}
+    completed = [
+        step
+        for step in completed
+        if plan_by_index.get(step.get("step_index"), step).get("status") == "completed"
+    ]
+
+    failed_by_index = {step.get("step_index"): step for step in failed}
+    for step in plan:
+        if step.get("status") in ("failed", "compliance_failed"):
+            failed_by_index.setdefault(step.get("step_index"), step)
+    failed = list(failed_by_index.values())
+
     total = len(plan)
     n_completed = len(completed)
     n_failed = len(failed)
 
-    if n_failed == 0:
+    if total == 0:
+        final_status = "failed"
+    elif n_failed == 0:
         final_status = "completed"
     elif n_completed == 0:
         final_status = "failed"
@@ -194,7 +209,7 @@ async def summarizer_node(state: ABOSState) -> Dict[str, Any]:
                 },
             ],
             temperature=0.3,
-            max_tokens=200,
+            max_tokens=700,
         )
         summary = response.choices[0].message.content
     except Exception as e:

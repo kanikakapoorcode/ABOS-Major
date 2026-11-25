@@ -133,8 +133,8 @@ COMPLIANCE FLAGS:
 
 # ── LLM helpers ───────────────────────────────────────────────────────────────
 
-@retry(stop=stop_after_attempt(2), wait=wait_exponential(min=2, max=8), reraise=True)
-async def _call_llm(system: str, user: str) -> str:
+@retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=2, min=5, max=30), reraise=True)
+async def _call_llm(system: str, user: str, max_tokens: int = 800) -> str:
     response = await acompletion(
         model=settings.ACTIVE_LLM,
         messages=[
@@ -143,7 +143,7 @@ async def _call_llm(system: str, user: str) -> str:
         ],
         response_format={"type": "json_object"},
         temperature=0.1,
-        max_tokens=600,
+        max_tokens=max_tokens,
     )
     return response.choices[0].message.content
 
@@ -275,7 +275,7 @@ async def translate_output(
             summary=summary,
             compliance_flags="\n".join(compliance_flags) if compliance_flags else "None",
         )
-        raw = await _call_llm(system, user)
+        raw = await _call_llm(system, user, max_tokens=1200)
         result = _parse_json(raw, fallback)
         return {
             "localised_summary": result.get("localised_summary", summary),
